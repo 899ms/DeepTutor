@@ -1215,6 +1215,37 @@ async def get_snapshot_asset(material_id: str, asset_name: str) -> FileResponse:
             "Cache-Control": "private, max-age=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
         },
+
+
+@router.get("/materials/{material_id}/media")
+async def list_material_media(material_id: str) -> list[dict[str, Any]]:
+    """The embedded-image index (name / locator / mime / size), empty if none."""
+    store = _store()
+    try:
+        return store.media_items(material_id)
+    except Exception as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/materials/{material_id}/media/{name}")
+async def get_material_media(material_id: str, name: str) -> FileResponse:
+    """One embedded image's bytes, for the reader pane's media strip."""
+    store = _store()
+    try:
+        path = store.media_path(material_id, name)
+        mime = next(
+            (row.get("mime") for row in store.media_items(material_id) if row.get("name") == name),
+            "",
+        )
+    except Exception as exc:
+        raise _http_error(exc) from exc
+    if path is None:
+        raise HTTPException(status_code=404, detail="No such image in this material.")
+    return FileResponse(
+        path,
+        media_type=mime or "image/png",
+        filename=name,
+        content_disposition_type="inline",
     )
 
 
