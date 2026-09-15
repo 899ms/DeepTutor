@@ -344,10 +344,12 @@ class TimedMediaStore:
                     changed = True
         return changed
 
-    def get(self, material_id: str) -> dict[str, Any]:
+    def get(self, material_id: str, *, lock_held: bool = False) -> dict[str, Any]:
         payload = self._load(material_id)
         if not self._repair_transcript_text(payload):
             return payload
+        if lock_held:
+            return self.save(payload)
         with self.lock(material_id):
             latest = self._load(material_id)
             if self._repair_transcript_text(latest):
@@ -643,7 +645,7 @@ async def resolve_material(
         # Network resolution happens outside the file lock. Re-read only the
         # mutable learning state so a concurrent progress save cannot be lost.
         try:
-            latest = store.get(material_id)
+            latest = store.get(material_id, lock_held=True)
         except TimedMediaNotFound:
             latest = {}
         if isinstance(latest.get("learning"), dict):
@@ -731,7 +733,7 @@ async def refresh_invidious_transcript(material_id: str) -> dict[str, Any]:
         "cues": cues,
     }
     with store.lock(material_id):
-        latest = store.get(material_id)
+        latest = store.get(material_id, lock_held=True)
         latest["transcript"] = refreshed_transcript
         latest["segments"] = build_segments(cues)
         saved = store.save(latest)

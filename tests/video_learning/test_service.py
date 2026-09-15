@@ -147,14 +147,14 @@ def test_store_repairs_legacy_caption_entities(isolated: Path) -> None:
         }
     )
 
-    repaired = store.get(material_id)
+    with store.lock(material_id):
+        repaired = store.get(material_id, lock_held=True)
 
     assert repaired["transcript"]["cues"][0]["text"] == "Learn & apply"
-    assert repaired["segments"] == [
-        {"locator": 7, "start": 0, "end": 1, "text": "Learn & apply"}
-    ]
+    assert repaired["segments"] == [{"locator": 7, "start": 0, "end": 1, "text": "Learn & apply"}]
     persisted = json.loads(store._path(material_id).read_text(encoding="utf-8"))
     assert persisted["transcript"]["cues"][0]["text"] == "Learn & apply"
+    assert store.get(material_id)["segments"][0]["text"] == "Learn & apply"
 
 
 def test_invidious_caption_choice_accepts_the_real_snake_case_schema() -> None:
