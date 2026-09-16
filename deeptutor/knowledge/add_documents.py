@@ -190,10 +190,13 @@ class DocumentAdder:
                 f"Knowledge base '{kb_name}' uses legacy index format and requires reindex before incremental add"
             )
 
-        allows_lightrag_bootstrap = self.rag_provider == LIGHTRAG_PROVIDER and not list_kb_versions(
-            self.kb_dir
-        )
-        if not has_provider_index and not allows_lightrag_bootstrap:
+        # Empty KBs (created with no documents) have no version dirs yet. The
+        # first upload is create-from-scratch, not an incremental add — every
+        # local pipeline already handles missing existing_storage. Legacy
+        # rag_storage/ is rejected above; broken version dirs still fail here
+        # so they go through reindex instead of a silent first-index bootstrap.
+        allows_empty_kb_bootstrap = not list_kb_versions(self.kb_dir)
+        if not has_provider_index and not allows_empty_kb_bootstrap:
             raise ValueError(f"Knowledge base not initialized ({self.rag_provider}): {kb_name}")
 
         self.api_key = api_key
