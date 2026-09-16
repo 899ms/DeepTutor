@@ -26,6 +26,7 @@ RUNTIME_ENV_KEYS = (
     "AUTH_PASSWORD_HASH",
     "AUTH_TOKEN_EXPIRE_HOURS",
     "AUTH_COOKIE_SECURE",
+    "AUTH_PRIVATE_LOGIN_HOSTS",
     "POCKETBASE_URL",
     "POCKETBASE_PORT",
     "POCKETBASE_EXTERNAL_URL",
@@ -54,6 +55,7 @@ def test_runtime_settings_creates_defaults_without_reading_dotenv(tmp_path: Path
     assert service.load_system(include_process_overrides=False)["backend_port"] == 8001
     assert service.load_system(include_process_overrides=False)["version_check_enabled"] is True
     assert service.load_auth(include_process_overrides=False)["enabled"] is False
+    assert service.load_auth(include_process_overrides=False)["private_login_hosts"] == []
     assert service.load_integrations(include_process_overrides=False)["pocketbase_url"] == ""
 
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
@@ -117,6 +119,7 @@ def test_runtime_process_env_is_explicit_override(tmp_path: Path) -> None:
     assert service.load_system()["backend_port"] == 9100
     assert service.load_system()["version_check_enabled"] is False
     assert service.load_auth()["enabled"] is True
+    assert service.load_auth()["private_login_hosts"] == []
     assert service.load_integrations()["pocketbase_port"] == 9090
     assert _read_json(service.path_for("system"))["backend_port"] == 8001
     assert _read_json(service.path_for("auth"))["enabled"] is False
@@ -134,7 +137,14 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
             "disable_ssl_verify": True,
         }
     )
-    service.save_auth({"enabled": True, "username": "admin", "token_expire_hours": 12})
+    service.save_auth(
+        {
+            "enabled": True,
+            "username": "admin",
+            "token_expire_hours": 12,
+            "private_login_hosts": ["Private.Example", "tailnet.example:8443", ""],
+        }
+    )
     service.save_integrations(
         {
             "pocketbase_url": "http://pocketbase:8090",
@@ -150,6 +160,11 @@ def test_render_environment_uses_json_backed_runtime_names(monkeypatch, tmp_path
     assert env["CORS_ORIGINS"] == "https://app.example"
     assert env["DISABLE_SSL_VERIFY"] == "true"
     assert env["AUTH_ENABLED"] == "true"
+    assert service.load_auth()["private_login_hosts"] == [
+        "private.example",
+        "tailnet.example:8443",
+    ]
+    assert env["AUTH_PRIVATE_LOGIN_HOSTS"] == "private.example,tailnet.example:8443"
     assert env["NEXT_PUBLIC_AUTH_ENABLED"] == "true"
     # Server-side proxy contract consumed by web/proxy.ts (the Next.js
     # middleware). DEEPTUTOR_AUTH_ENABLED gates the login redirect;
@@ -564,6 +579,20 @@ def test_runtime_settings_can_ignore_process_overrides(tmp_path: Path) -> None:
 
     assert service.load_system()["backend_port"] == 8001
     assert service.load_auth()["enabled"] is False
+
+
+def test_auth_private_login_hosts_process_env_override(tmp_path: Path) -> None:
+    service = RuntimeSettingsService(
+        tmp_path / "settings",
+        process_env={"AUTH_PRIVATE_LOGIN_HOSTS": "Private.Example;tailnet.example:8443"},
+    )
+    service.save_auth({"private_login_hosts": ["unused.example"]})
+
+    assert service.load_auth()["private_login_hosts"] == [
+        "private.example",
+        "tailnet.example:8443",
+    ]
+    assert _read_json(service.path_for("auth"))["private_login_hosts"] == ["unused.example"]
 
 
 def test_chat_attachment_limits_defaults_and_clamping(tmp_path: Path) -> None:
