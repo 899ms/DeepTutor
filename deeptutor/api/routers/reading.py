@@ -48,6 +48,7 @@ from deeptutor.reading import (
     export_material,
     render_outline,
 )
+from deeptutor.reading.captions import caption_material_media, captions_enabled
 from deeptutor.reading.ingestion import (
     MAX_TRANSCRIPT_BYTES,
     ReadingIngestionService,
@@ -99,6 +100,31 @@ def _ingestion() -> ReadingIngestionService:
 
 def _new_material_id() -> str:
     return f"rm_{uuid.uuid4().hex[:12]}"
+
+
+def _schedule_media_captions(
+    background_tasks: BackgroundTasks, store: ReadingStore, material_id: str
+) -> None:
+    """Best-effort: caption a material's embedded figures after ingest.
+
+    The vision model writes one sentence per image back into the store's media
+    index so a text-only model can still describe every figure in the book.
+    This must never affect the upload result or the ingest status, so any
+    failure is only logged.
+    """
+    if not captions_enabled():
+        return
+    background_tasks.add_task(_caption_material_best_effort, store, material_id)
+
+
+async def _caption_material_best_effort(store: ReadingStore, material_id: str) -> None:
+    """Run the caption pass without ever letting an error escape."""
+    if not captions_enabled():
+        return
+    try:
+        await caption_material_media(material_id, store=store)
+    except Exception:  # noqa: BLE001 - captioning is best-effort
+        logger.warning("Image captioning failed for %s", material_id, exc_info=True)
 
 
 def _content_facts(store: ReadingStore, record: Any) -> tuple[int, int]:
@@ -965,6 +991,7 @@ async def upload_material(
             catalog = _catalog()
             if reuse or catalog.get_material(manifest.material_id) is None:
                 catalog.register_manifest(manifest)
+                _schedule_media_captions(background_tasks, store, manifest.material_id)
                 return _detail(store, manifest)
             # A separate material over the same extracted content: the bytes
             # are stored once, while annotations and reading position are kept
@@ -979,6 +1006,7 @@ async def upload_material(
                 render_mode=manifest.render_mode,
                 status=IngestionStatus.READY,
             )
+            _schedule_media_captions(background_tasks, store, record.material_id)
             return _detail(store, store.manifest(record.material_id))
     except HTTPException:
         raise
@@ -1215,6 +1243,7 @@ async def get_snapshot_asset(material_id: str, asset_name: str) -> FileResponse:
             "Cache-Control": "private, max-age=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
         },
+    )
 
 
 @router.get("/materials/{material_id}/media")

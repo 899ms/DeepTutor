@@ -333,6 +333,8 @@ class DocumentParsingUpdate(BaseModel):
 
     engine: Optional[str] = None
     engines: Optional[dict[str, dict]] = None
+    # Toggle for vision-model captions of embedded images (None = keep stored).
+    image_caption: Optional[bool] = None
 
 
 class DocumentParsingTest(BaseModel):
@@ -1086,6 +1088,7 @@ def _document_parsing_payload() -> dict[str, Any]:
     docling_slice = engines.get("docling", {})
     return {
         "engine": full.get("engine"),
+        "image_caption": bool(full.get("image_caption", False)),
         "engines": redacted,
         "available_engines": available,
         "readiness": readiness,
@@ -1177,7 +1180,18 @@ async def update_document_parsing_settings(payload: DocumentParsingUpdate):
         engines[name].update(merged)
 
     new_engine = payload.engine or full.get("engine")
-    service.save_document_parsing({"engine": new_engine, "engines": engines})
+    image_caption = (
+        payload.image_caption
+        if payload.image_caption is not None
+        else bool(full.get("image_caption", False))
+    )
+    service.save_document_parsing(
+        {
+            "engine": new_engine,
+            "image_caption": image_caption,
+            "engines": engines,
+        }
+    )
     return _document_parsing_payload()
 
 
