@@ -36,9 +36,12 @@ import re
 from deeptutor.reading.models import OutlineEntry, ReadingError, RenderMode, UnitKind, UnitReference
 from deeptutor.utils.document_images import (
     EmbeddedImage,
+    build_marker,
     extract_docx_rich,
+    extract_pdf_images,
     extract_pptx_rich,
     find_markers,
+    reading_image_budget,
 )
 
 logger = logging.getLogger(__name__)
@@ -175,6 +178,12 @@ def _extract_pdf(source: Path) -> Extraction:
     except Exception as exc:
         raise ReadingError(f"{source.name}: failed to read PDF ({exc})") from exc
 
+    media: tuple[MediaItem, ...] = ()
+    # Every page's figures ride along as locator-pinned media so the reader can
+    # attach what the question is about. Mining them is best-effort: a quirk in
+    # one image must never turn a readable PDF into a failed ingest.
+    units, media = _pdf_pages_with_image_markers(units, source)
+
     return Extraction(
         units=units,
         unit="page",
@@ -183,8 +192,44 @@ def _extract_pdf(source: Path) -> Extraction:
         title=title,
         outline=outline,
         render_mode="pdf",
+        media=media,
     )
 
+
+def _pdf_pages_with_image_markers(
+    units: tuple[str, ...], source: Path
+) -> tuple[tuple[str, ...], tuple[MediaItem, ...]]:
+    """Append the page's ``[图片 N: name]`` markers to that page's text tail.
+
+    Markers are appended only at the very end of each unit so the character
+    offsets of the page's own prose never move — stored per-character
+    annotations resolve against quotes lifted from this text, and shifting them
+    would silently detach every highlight. The markers name the images, which
+    :func:`_media_for_units` then resolves back into locator-pinned media via
+    the same mapping DOCX/PPTX already use.
+
+    Best-effort by contract: any failure or empty result returns the units and
+    no media untouched, so an image quirk never turns a readable PDF into a
+    failed ingest.
+    """
+    try:
+        pdf_images = extract_pdf_images(source.read_bytes(), budget=reading_image_budget())
+    except Exception:
+        logger.warning("%s: PDF image extraction failed", source.name, exc_info=True)
+        return units, ()
+    if not pdf_images.collection.images:
+        return units, ()
+
+    marker_by_page: dict[int, list[str]] = {}
+    for page_number, indices in pdf_images.page_map:
+        marker_by_page[page_number] = [
+            build_marker(pdf_images.collection.images[index]) for index in indices
+        ]
+    targeted = tuple(
+        unit + ("\n" + "\n".join(marker_by_page[i]) if i in marker_by_page else "")
+        for i, unit in enumerate(units, 1)
+    )
+    return targeted, _media_for_units(targeted, pdf_images.collection.images)
 
 def _extract_epub(source: Path) -> Extraction:
     """Preserve EPUB spine order so browser and assistant locators agree."""
