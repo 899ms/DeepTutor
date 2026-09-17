@@ -356,6 +356,9 @@ DEFAULT_LIGHTRAG_SETTINGS: dict[str, Any] = {
     "max_concurrent_files": 1,
     "llm_model_max_async": 4,
     "entity_extract_max_gleaning": 1,
+    # Maps to LightRAG's ``default_llm_timeout`` (seconds). LightRAG derives its
+    # worker execution cap as 2x this value, so 240 -> a 480s per-call ceiling.
+    "llm_timeout": 240,
     "llm_profile_id": "",
     "llm_model_id": "",
 }
@@ -977,6 +980,9 @@ class RuntimeSettingsService:
             ),
             "entity_extract_max_gleaning": _coerce_clamped_int(
                 settings.get("entity_extract_max_gleaning"), 1, 0, 5
+            ),
+            "llm_timeout": _coerce_clamped_int(
+                settings.get("llm_timeout"), 240, 60, 3600
             ),
             "llm_profile_id": _string(settings.get("llm_profile_id"))[:128],
             "llm_model_id": _string(settings.get("llm_model_id"))[:128],

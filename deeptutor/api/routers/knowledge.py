@@ -1489,6 +1489,7 @@ class LightRagConfigUpdate(BaseModel):
     max_concurrent_files: int | None = None
     llm_model_max_async: int | None = None
     entity_extract_max_gleaning: int | None = None
+    llm_timeout: int | None = None
     llm_profile_id: str | None = None
     llm_model_id: str | None = None
 

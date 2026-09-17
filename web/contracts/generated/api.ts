@@ -10966,6 +10966,8 @@ export interface components {
       readonly llm_model_max_async?: number | null;
       /** Llm Profile Id */
       readonly llm_profile_id?: string | null;
+      /** Llm Timeout */
+      readonly llm_timeout?: number | null;
       /** Max Concurrent Files */
       readonly max_concurrent_files?: number | null;
       /** Response Type */

@@ -4387,6 +4387,17 @@
             ],
             "title": "Llm Profile Id"
           },
+          "llm_timeout": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Llm Timeout"
+          },
           "max_concurrent_files": {
             "anyOf": [
               {
