@@ -1790,3 +1790,22 @@ async def test_ui_endpoints_do_not_freeze_defaults_into_the_file(
     assert stored == {"theme": "dark"}, f"only the changed field belongs on disk: {stored}"
     # The read path still reports the full picture.
     assert settings_router.load_ui_settings()["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_voice_math_speak_persists_without_freezing_defaults(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    settings_file = tmp_path / "interface.json"
+    monkeypatch.setattr(settings_router, "_settings_file", lambda: settings_file)
+
+    response = await settings_router.update_voice_math_speak(
+        settings_router.VoiceMathSpeakUpdate(voice_math_speak=False)
+    )
+
+    assert response == {"voice_math_speak": False}
+    stored = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert stored == {"voice_math_speak": False}
+    loaded = settings_router.load_ui_settings()
+    assert loaded["voice_math_speak"] is False
+    assert loaded["voice_autoplay"] is False

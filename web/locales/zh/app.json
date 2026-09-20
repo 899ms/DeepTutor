@@ -242,6 +242,8 @@
   "Playback": "播放",
   "How spoken replies behave in chat.": "语音回复在聊天中的行为。",
   "Auto-play replies": "自动朗读回复",
+  "Math speak": "数学朗读",
+  "Read LaTeX as words — fractions, powers, and Greek letters. Turn this off to keep formulas closer to the written math. Dollar signs are never spoken.": "把 LaTeX 读成自然语言（分数、乘方、希腊字母）。关闭后更接近书面公式；仍不会读出美元符号。",
   "Breadcrumb": "导航路径",
   "Saved to": "保存于",
   "Network changes take effect after restart.": "网络改动重启后生效。",

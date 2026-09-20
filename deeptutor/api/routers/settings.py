@@ -120,6 +120,9 @@ DEFAULT_UI_SETTINGS = {
     # preference (not catalog); the chat surface also keeps a per-session
     # override on top of this global default.
     "voice_autoplay": False,
+    # When true, TTS verbalizes LaTeX into spoken math. When false, formulas
+    # are unwrapped from $ / $$ only. Default true (matches INTERFACE_DEFAULTS).
+    "voice_math_speak": True,
     # Seconds the chat UI waits for any turn event before declaring the
     # connection timed out. Bumped from 60 → 180 so slow tools (image/video
     # generation) don't trip it; user-adjustable in Settings > Network.
@@ -173,6 +176,10 @@ class UISettingsUpdate(BaseModel):
 
 class VoiceAutoplayUpdate(BaseModel):
     voice_autoplay: bool
+
+
+class VoiceMathSpeakUpdate(BaseModel):
+    voice_math_speak: bool
 
 
 class ChatResponseTimeoutUpdate(BaseModel):
@@ -1891,6 +1898,18 @@ async def update_voice_autoplay(update: VoiceAutoplayUpdate):
     """
     patch_ui_settings(voice_autoplay=update.voice_autoplay)
     return {"voice_autoplay": update.voice_autoplay}
+
+
+@router.put("/voice-math-speak")
+async def update_voice_math_speak(update: VoiceMathSpeakUpdate):
+    """Persist whether TTS verbalizes LaTeX as spoken math.
+
+    A personal UI preference (any authenticated user). The voice router reads
+    this on each synthesis call; chat does not send a per-request override.
+    Dollar-sign delimiters are stripped even when this is off.
+    """
+    patch_ui_settings(voice_math_speak=update.voice_math_speak)
+    return {"voice_math_speak": update.voice_math_speak}
 
 
 @router.put("/chat-response-timeout")
