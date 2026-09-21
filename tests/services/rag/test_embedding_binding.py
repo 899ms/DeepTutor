@@ -78,16 +78,23 @@ def read_entry(root, name="kb"):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fail_publication", [False, True])
+@pytest.mark.parametrize("failure", [None, "metadata", "binding"])
+@pytest.mark.parametrize("target_model", ["a", "b"])
 async def test_lightrag_rebuild_persists_binding_after_meta_under_write_ownership(
-    catalog, tmp_path, monkeypatch, fail_publication
+    catalog, tmp_path, monkeypatch, failure, target_model
 ):
+    from deeptutor.services.rag.pipelines.lightrag import engine, storage
     from deeptutor.services.rag.pipelines.lightrag import pipeline as pipeline_module
-    from deeptutor.services.rag.pipelines.lightrag import storage
     from deeptutor.services.rag.pipelines.lightrag.indexing_policy import IndexingPolicyError
     from deeptutor.services.rag.pipelines.lightrag.write_lock import write_ownership
 
+    monkeypatch.setattr(engine, "installed_version", lambda: "synthetic-test-version")
     write_entry(tmp_path, rag_provider="lightrag")
+    old = tmp_path / "kb" / "version-1"
+    old.mkdir()
+    (old / "kv_store_doc_status.json").write_text('{"old":{"status":"processed"}}')
+    storage.write_meta(old, embedding_config=get_embedding_config(selection("a")))
+    old_meta = (old / "meta.json").read_bytes()
     service = RAGService(kb_base_dir=str(tmp_path))
     pipeline = pipeline_module.LightRagPipeline(str(tmp_path))
     service._pipelines["lightrag"] = pipeline
@@ -116,28 +123,44 @@ async def test_lightrag_rebuild_persists_binding_after_meta_under_write_ownershi
     def persist(*args):
         root = storage.latest_published_root(tmp_path / "kb")
         assert root is not None
-        assert json.loads((root / "meta.json").read_text())["embedding_model"] == "embed-b"
+        assert (
+            json.loads((root / "meta.json").read_text())["embedding_model"]
+            == f"embed-{target_model}"
+        )
         with pytest.raises(IndexingPolicyError, match="Another indexing operation"):
             with write_ownership(tmp_path / "kb"):
                 pytest.fail("Binding publication must retain indexing ownership")
         calls.append(True)
+        if failure == "binding":
+            raise OSError("binding publication failed")
         original_persist(*args)
 
     monkeypatch.setattr(binding, "persist_binding", persist)
-    if fail_publication:
+    if failure == "metadata":
 
         def fail_meta(*args, **kwargs):
             raise OSError("publication failed")
 
         monkeypatch.setattr(storage, "write_meta", fail_meta)
+    if failure:
         with pytest.raises(OSError, match="publication failed"):
-            await service.initialize("kb", ["doc"], embedding_selection=selection("b"))
-        assert calls == []
+            await service.initialize("kb", ["doc"], embedding_selection=selection(target_model))
+        assert calls == ([True] if failure == "binding" else [])
         assert read_entry(tmp_path)["embedding_selection"] == selection("a")
+        assert storage.latest_published_root(tmp_path / "kb") == old
+        assert (
+            storage.published_root_for_embedding(
+                tmp_path / "kb", read_entry(tmp_path)["embedding_signature"]
+            )
+            == old
+        )
+        assert not (tmp_path / "kb" / "version-2" / "meta.json").exists()
+        assert (old / "meta.json").read_bytes() == old_meta
     else:
-        assert await service.initialize("kb", ["doc"], embedding_selection=selection("b"))
+        assert await service.initialize("kb", ["doc"], embedding_selection=selection(target_model))
         assert calls == [True]
-        assert read_entry(tmp_path)["embedding_selection"] == selection("b")
+        assert read_entry(tmp_path)["embedding_selection"] == selection(target_model)
+        assert storage.latest_published_root(tmp_path / "kb").name == "version-2"
     with write_ownership(tmp_path / "kb"):
         pass  # Ownership is released on success and failure.
 

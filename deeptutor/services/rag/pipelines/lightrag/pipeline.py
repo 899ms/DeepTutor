@@ -375,7 +375,6 @@ class LightRagPipeline:
         with write_ownership(kb_dir):
             if validate_binding := kwargs.pop("validate_embedding_binding", None):
                 validate_binding()
-            publish_binding = kwargs.pop("publish_embedding_binding", None)
             snapshot = kwargs.get("indexing_snapshot") or kwargs.get("accepted_indexing_snapshot")
             if snapshot is not None:
                 indexing_policy.validate_target(snapshot, kb_dir)
@@ -386,10 +385,26 @@ class LightRagPipeline:
                     else "accepted_indexing_snapshot"
                 )
                 kwargs[key] = fresh
-            result = await self._initialize_owned(kb_name, file_paths, **kwargs)
-            if result and publish_binding is not None:
+            return await self._initialize_owned(kb_name, file_paths, **kwargs)
+
+    def _publish_new_version(
+        self,
+        root_dir: Path,
+        policy: dict[str, Any],
+        embedding_config: Any,
+        publish_binding: Callable[[], None] | None,
+    ) -> None:
+        storage.write_meta(root_dir, indexing_policy=policy, embedding_config=embedding_config)
+        try:
+            if publish_binding is not None:
                 publish_binding()
-            return result
+        except BaseException:
+            # A same-embedding rebuild would otherwise become the newest
+            # compatible version even though its binding publication failed.
+            # Withdraw only this new candidate's publication marker; retain
+            # its data and the previous version for recovery.
+            (root_dir / "meta.json").unlink()
+            raise
 
     async def _initialize_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
@@ -412,8 +427,11 @@ class LightRagPipeline:
             before_publish = kwargs.get("before_publish")
             if before_publish is not None:
                 before_publish(root_dir)
-            storage.write_meta(
-                root_dir, indexing_policy=policy, embedding_config=snapshot.embedding_config
+            self._publish_new_version(
+                root_dir,
+                policy,
+                snapshot.embedding_config,
+                kwargs.get("publish_embedding_binding") if outcome.complete else None,
             )
             self._clear_pending_policy(kb_name)
             return outcome.complete
@@ -434,7 +452,6 @@ class LightRagPipeline:
         with write_ownership(kb_dir):
             if validate_binding := kwargs.pop("validate_embedding_binding", None):
                 validate_binding()
-            publish_binding = kwargs.pop("publish_embedding_binding", None)
             if kwargs.get("indexing_snapshot") is not None and (
                 storage.latest_published_root(kb_dir) is not None or list_kb_versions(kb_dir)
             ):
@@ -452,10 +469,7 @@ class LightRagPipeline:
                     else "accepted_indexing_snapshot"
                 )
                 kwargs[key] = fresh
-            result = await self._add_documents_owned(kb_name, file_paths, **kwargs)
-            if result and publish_binding is not None:
-                publish_binding()
-            return result
+            return await self._add_documents_owned(kb_name, file_paths, **kwargs)
 
     async def _add_documents_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
@@ -499,8 +513,11 @@ class LightRagPipeline:
                 before_publish = kwargs.get("before_publish")
                 if before_publish is not None:
                     before_publish(root_dir)
-                storage.write_meta(
-                    root_dir, indexing_policy=policy, embedding_config=snapshot.embedding_config
+                self._publish_new_version(
+                    root_dir,
+                    policy,
+                    snapshot.embedding_config,
+                    kwargs.get("publish_embedding_binding") if outcome.complete else None,
                 )
                 self._clear_pending_policy(kb_name)
             else:
@@ -515,6 +532,10 @@ class LightRagPipeline:
                         "existing published policy",
                         exc_info=True,
                     )
+                if outcome.complete and (
+                    publish_binding := kwargs.get("publish_embedding_binding")
+                ):
+                    publish_binding()
             return outcome.complete
         except LightRagBatchError as exc:
             if not is_update and exc.outcome.accepted == 0:
