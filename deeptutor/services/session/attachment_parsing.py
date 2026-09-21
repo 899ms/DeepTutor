@@ -62,6 +62,8 @@ async def parse_chat_pdf_attachments(
                         on_progress(attachment_id, "parsing", message) if on_progress else None
                     ),
                 )
+                if on_progress:
+                    on_progress(attachment_id, "retrieving", "Retrieving parsed document result")
                 text = str(parsed.markdown or "").strip()
                 if not text:
                     error = "configured parser produced no content"

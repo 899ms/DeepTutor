@@ -89,7 +89,12 @@ async def test_scan_pdf_uses_parser_and_reports_structured_progress(
 
     assert records[0]["extracted_text"] == "![page](page-1.png)"
     assert contexts == ["[File: scan.pdf]\n![page](page-1.png)"]
-    assert [phase for _, phase, _ in progress] == ["submitting", "parsing", "completed"]
+    assert [phase for _, phase, _ in progress] == [
+        "submitting",
+        "parsing",
+        "retrieving",
+        "completed",
+    ]
 
 
 @pytest.mark.asyncio

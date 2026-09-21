@@ -355,6 +355,10 @@ class TurnExecutor:
                 for record in attachment_records
                 if str(record.get("filename") or "").lower().endswith(".pdf")
             ]
+            pdf_names = {
+                str(record.get("id") or ""): str(record.get("filename") or "PDF attachment")
+                for record in pdf_records
+            }
             from deeptutor.services.session.attachment_parsing import parse_chat_pdf_attachments
 
             loop = asyncio.get_running_loop()
@@ -369,7 +373,11 @@ class TurnExecutor:
                                 source="attachment_parsing",
                                 stage=phase,
                                 content=message,
-                                metadata={"attachment_id": attachment_id, "phase": phase},
+                                metadata={
+                                    "attachment_id": attachment_id,
+                                    "filename": pdf_names.get(attachment_id, "PDF attachment"),
+                                    "phase": phase,
+                                },
                             ),
                         )
                     )
@@ -379,7 +387,7 @@ class TurnExecutor:
                 _attachment_progress(
                     str(record.get("id") or ""),
                     "received",
-                    "Received PDF attachment",
+                    "PDF uploaded to DeepTutor",
                 )
 
             attachment_records, document_texts = await parse_chat_pdf_attachments(
