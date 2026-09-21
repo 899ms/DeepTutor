@@ -97,11 +97,16 @@ _QUIZ_EVIDENCE_WINDOW = 2.0
 
 
 def _quiz_evidence_matches_attempt(event: LearningEvidence, attempt: QuizAttempt) -> bool:
-    return (
-        event.knowledge_point_id == attempt.knowledge_point_id
-        and event.assessment_type in _QUIZ_EVIDENCE_TYPES
-        and abs(event.timestamp - attempt.timestamp) <= _QUIZ_EVIDENCE_WINDOW
-    )
+    if (
+        event.knowledge_point_id != attempt.knowledge_point_id
+        or event.assessment_type not in _QUIZ_EVIDENCE_TYPES
+    ):
+        return False
+    if event.question_id:
+        return event.question_id == attempt.question_id
+    # Legacy evidence predates question linkage. Keep its narrow timestamp
+    # match so old paths remain repairable without risking newer linked rows.
+    return abs(event.timestamp - attempt.timestamp) <= _QUIZ_EVIDENCE_WINDOW
 
 
 def _drop_quiz_evidence_for_attempts(
@@ -133,7 +138,7 @@ def _drop_quiz_evidence_for_attempts(
         rebuilt: list[LearningEvidence] = []
         for event in reversed(kept):
             leftover = leftover_by_kp.get(event.knowledge_point_id, 0)
-            if leftover and event.assessment_type in _QUIZ_EVIDENCE_TYPES:
+            if leftover and not event.question_id and event.assessment_type in _QUIZ_EVIDENCE_TYPES:
                 leftover_by_kp[event.knowledge_point_id] = leftover - 1
                 continue
             rebuilt.append(event)
@@ -494,6 +499,7 @@ class LearningService:
             evidence = self._record_quiz_evidence(
                 progress,
                 knowledge_point_id,
+                question_id=question_id,
                 is_correct=is_correct,
                 retrying=retrying,
                 session_id=session_id,
@@ -518,6 +524,7 @@ class LearningService:
         progress: LearningProgress,
         kp_id: str,
         *,
+        question_id: str = "",
         is_correct: bool,
         retrying: bool = False,
         session_id: str = "",
@@ -530,6 +537,7 @@ class LearningService:
             if attempt.knowledge_point_id == kp_id and not attempt.voided
         )
         evidence = LearningEvidence(
+            question_id=question_id,
             knowledge_point_id=kp_id,
             assessment_type=assessment_type,
             result="correct" if is_correct else "incorrect",
@@ -1280,6 +1288,7 @@ class LearningService:
         else:
             synthesized = [
                 LearningEvidence(
+                    question_id=attempt.question_id,
                     knowledge_point_id=kp_id,
                     timestamp=attempt.timestamp,
                     assessment_type="quiz",

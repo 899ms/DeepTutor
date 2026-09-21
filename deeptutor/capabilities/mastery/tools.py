@@ -321,6 +321,7 @@ async def _sync_mastery_attempt_to_question_bank(
     confidence: float | None = None,
     response_time: float | None = None,
     quality: float | None = None,
+    result: str = "",
 ) -> None:
     if not session_id:
         return
@@ -343,7 +344,7 @@ async def _sync_mastery_attempt_to_question_bank(
         difficulty=pending.difficulty,
         user_answer=user_answer,
         is_correct=is_correct,
-        result=is_correct_to_result(is_correct),
+        result=result or is_correct_to_result(is_correct),
         source="mastery_path",
         assessment_type="quiz",
         material_id=path_id,
@@ -1481,7 +1482,8 @@ class MasteryRepairQuestionTool(BaseTool):
                 turn_id=details["turn_id"],
                 pending=pending,
                 user_answer=details["user_answer"],
-                is_correct=True if details["action"] == "void" else bool(details["is_correct"]),
+                is_correct=False if details["action"] == "void" else bool(details["is_correct"]),
+                result="voided" if details["action"] == "void" else "",
                 choice_options=details["options"] or None,
                 correct_answer=details["expected_answer"],
                 section_title=section_title or (kp.name if kp is not None else ""),

@@ -103,8 +103,10 @@ SCORE_TRENDS = frozenset({"new", "improved", "declined", "unchanged"})
 # Stored ``result=''`` is a pre-v2 row: treat it as already graded so wrong
 # lists do not swallow ungraded spectacle rows, and old incorrect rows stay
 # in the wrong filter.
-_GRADED_RESULT_SQL = "COALESCE(NULLIF(n.result,''),'graded') NOT IN ('ungraded','')"
-_GRADED_RESULT_SQL_UNALIASED = "COALESCE(NULLIF(result,''),'graded') NOT IN ('ungraded','')"
+_GRADED_RESULT_SQL = "COALESCE(NULLIF(n.result,''),'graded') NOT IN ('ungraded','voided','')"
+_GRADED_RESULT_SQL_UNALIASED = (
+    "COALESCE(NULLIF(result,''),'graded') NOT IN ('ungraded','voided','')"
+)
 ACTIVE_TURN_STATUSES = frozenset({"queued", "running", "waiting_input"})
 TERMINAL_TURN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 ALL_TURN_STATUSES = ACTIVE_TURN_STATUSES | TERMINAL_TURN_STATUSES
@@ -2734,7 +2736,13 @@ class SQLiteSessionStore:
                     score_trend,
                 )
                 assessment = self._notebook_assessment_values(item, is_correct)
-                resolved_on_insert = 0 if assessment[1] == "ungraded" else (1 if is_correct else 0)
+                resolved_on_insert = (
+                    0
+                    if assessment[1] == "ungraded"
+                    else 1
+                    if assessment[1] == "voided" or is_correct
+                    else 0
+                )
                 if images_json is None:
                     conn.execute(
                         """
@@ -2774,6 +2782,7 @@ class SQLiteSessionStore:
                             is_correct = excluded.is_correct,
                             resolved = CASE
                                 WHEN excluded.result = 'ungraded' THEN notebook_entries.resolved
+                                WHEN excluded.result = 'voided' THEN 1
                                 WHEN excluded.is_correct = 1 THEN 1
                                 WHEN excluded.is_correct = 0 AND notebook_entries.is_correct = 1 THEN 0
                                 ELSE notebook_entries.resolved
@@ -2839,6 +2848,7 @@ class SQLiteSessionStore:
                             is_correct = excluded.is_correct,
                             resolved = CASE
                                 WHEN excluded.result = 'ungraded' THEN notebook_entries.resolved
+                                WHEN excluded.result = 'voided' THEN 1
                                 WHEN excluded.is_correct = 1 THEN 1
                                 WHEN excluded.is_correct = 0 AND notebook_entries.is_correct = 1 THEN 0
                                 ELSE notebook_entries.resolved

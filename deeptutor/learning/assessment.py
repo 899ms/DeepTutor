@@ -276,6 +276,7 @@ def _apply_linked_retention(
     event_result = result if result in {"correct", "incorrect", "partial"} else "incorrect"
     evidence = LearningEvidence(
         evidence_id=attempt_id,
+        question_id=record.question_id,
         knowledge_point_id=record.knowledge_point_id,
         timestamp=record.created_at,
         source=record.source,

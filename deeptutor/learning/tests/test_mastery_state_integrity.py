@@ -428,6 +428,35 @@ def test_void_invalid_question_recomputes_mastery_and_review(tmp_path):
     assert next_objective(progress).status != "mastered"
 
 
+def test_void_removes_only_evidence_for_that_question(tmp_path):
+    store = LearningStore(root=tmp_path)
+    service = LearningService(store)
+    service.replace_modules_for_path("book1", [_module("m1", [_kp("kp1", "Truth tables")])])
+    scheduler = SpacedRepetitionScheduler()
+    for question_id in ("q-keep", "q-void"):
+        service.grade_and_record(
+            store.load("book1"),
+            question_id=question_id,
+            knowledge_point_id="kp1",
+            module_id="m1",
+            user_answer="A",
+            expected_answer="B",
+            question_type="choice",
+            scheduler=scheduler,
+        )
+
+    progress, _ = service.repair_question(
+        "book1",
+        "q-void",
+        action="void",
+        reason="invalid second question",
+        scheduler=scheduler,
+    )
+
+    assert [event.question_id for event in progress.learning_evidence] == ["q-keep"]
+    assert progress.repetition_states["kp1"].review_count == 1
+
+
 def test_correct_answer_key_regrades_and_restores_mastery(tmp_path):
     store = LearningStore(root=tmp_path)
     service = LearningService(store)
@@ -534,7 +563,12 @@ async def test_repair_question_tool_voids_wrong_key_from_question_bank(
     assert wrong_after["total"] == 0
     kept = await session_store.list_notebook_entries()
     assert kept["total"] == 1
-    assert kept["items"][0]["is_correct"] is True
+    assert kept["items"][0]["is_correct"] is False
+    assert kept["items"][0]["result"] == "voided"
+    attempts = await session_store.list_assessment_attempts(
+        session["id"], question_id=quiz["question_id"]
+    )
+    assert [attempt["result"] for attempt in attempts] == ["incorrect", "voided"]
 
 
 # ── 6. defer advances without faking mastery ───────────────────────────────
