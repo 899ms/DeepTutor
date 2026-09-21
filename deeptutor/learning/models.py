@@ -161,6 +161,7 @@ class LearningEvidence(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    evidence_id: str = ""
     knowledge_point_id: str
     timestamp: float = Field(default_factory=time.time)
     source: str = "mastery_path"

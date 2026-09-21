@@ -1563,9 +1563,9 @@ class LearningService:
         The boolean is the gate of record; ``mastery_levels`` is nudged only so
         the map's colour matches the gate (full on pass, capped on fail).
 
-        A first pass starts spaced repetition at the type's first configured
-        interval. Later assessments advance or shorten that existing schedule.
-        An initial failure is not reviewable mastery, so it creates no state.
+        Every assessment applies the same retention transition that evidence
+        replay uses. This keeps the persisted state reproducible and lets an
+        initial failure schedule the prompt repair it demonstrably needs.
         """
         self.record_qualitative_in_memory(
             progress,
@@ -1653,8 +1653,10 @@ class LearningService:
         progress.mastery_levels[kp_id] = max(current, 1.0) if passed else min(current, 0.4)
         if evidence:
             progress.feynman_explanations[kp_id] = evidence
+        moment = time.time()
         review_evidence = LearningEvidence(
             knowledge_point_id=kp_id,
+            timestamp=moment,
             assessment_type="qualitative",
             result="correct" if passed else "partial",
             quality=(1.0 if evidence else 0.9) if passed else 0.2,
@@ -1665,13 +1667,18 @@ class LearningService:
         progress.learning_evidence.append(review_evidence)
         kp_type = progress.knowledge_types.get(kp_id)
         if kp_type is not None and scheduler is not None:
-            state = progress.repetition_states.get(kp_id)
-            if state is not None and state.next_review_at <= time.time():
-                scheduler.schedule_review(state, kp_type, review_evidence)
-            elif state is None and passed:
-                progress.repetition_states[kp_id] = scheduler.get_initial_state(kp_type)
+            state = progress.repetition_states.get(kp_id) or scheduler.get_initial_state(
+                kp_type, now=review_evidence.timestamp
+            )
+            progress.repetition_states[kp_id] = state
+            scheduler.schedule_review(
+                state,
+                kp_type,
+                review_evidence,
+                now=review_evidence.timestamp,
+            )
             progress.review_queue = scheduler.build_review_queue(progress)
-        progress.updated_at = time.time()
+        progress.updated_at = moment
 
     def list_path_overviews(self) -> list[dict]:
         """Gate-accurate one-line state for every path the learner owns.
