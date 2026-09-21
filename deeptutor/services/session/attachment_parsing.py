@@ -25,6 +25,8 @@ async def parse_chat_pdf_attachments(
     """Parse every chat PDF with the active engine and update model context."""
     updated = [dict(record) for record in records]
     contexts = list(document_texts)
+    if not any(str(record.get("filename") or "").lower().endswith(".pdf") for record in updated):
+        return updated, contexts
     limits = get_chat_attachment_limits()
     total_chars = sum(
         int(record.get("extracted_chars") or 0)

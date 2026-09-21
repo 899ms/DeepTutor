@@ -10,6 +10,25 @@ from deeptutor.services.storage.attachment_store import LocalDiskAttachmentStore
 
 
 @pytest.mark.asyncio
+async def test_non_pdf_batch_does_not_read_parser_settings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        "deeptutor.services.session.attachment_parsing.get_chat_attachment_limits",
+        lambda: (_ for _ in ()).throw(AssertionError("settings should not be read")),
+    )
+    records, contexts = await parse_chat_pdf_attachments(
+        [{"id": "txt", "filename": "notes.txt", "extracted_text": "hello"}],
+        attachment_store=LocalDiskAttachmentStore(root=tmp_path / "attachments"),
+        session_id="session",
+        document_texts=["[File: notes.txt]\nhello"],
+    )
+
+    assert records[0]["extracted_text"] == "hello"
+    assert contexts == ["[File: notes.txt]\nhello"]
+
+
+@pytest.mark.asyncio
 async def test_chat_pdf_always_uses_configured_parser(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
