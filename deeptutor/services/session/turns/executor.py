@@ -345,22 +345,15 @@ class TurnExecutor:
 
             from deeptutor.utils.document_extractor import extract_documents_from_records
 
-            # PDFs are parsed exclusively by the configured Document Parsing
-            # engine. Keep them out of the legacy local extractor so a native
-            # text layer can never mask missing images or scanned pages.
+            # Keep the built-in extractor as a graceful fallback, then replace
+            # every PDF's result with the configured parser output. Running the
+            # configured parser regardless of a native text layer is what lets
+            # OCR/layout engines see scanned pages and figures.
+            document_texts, attachment_records = extract_documents_from_records(attachment_records)
             pdf_records = [
-                record for record in attachment_records
-                if str(record.get("filename") or "").lower().endswith(".pdf")
-            ]
-            non_pdf_records = [
-                record for record in attachment_records
-                if not str(record.get("filename") or "").lower().endswith(".pdf")
-            ]
-            document_texts, extracted_non_pdf = extract_documents_from_records(non_pdf_records)
-            extracted_by_id = {str(record.get("id")): record for record in extracted_non_pdf}
-            attachment_records = [
-                extracted_by_id.get(str(record.get("id")), record)
+                record
                 for record in attachment_records
+                if str(record.get("filename") or "").lower().endswith(".pdf")
             ]
             from deeptutor.services.session.attachment_parsing import parse_chat_pdf_attachments
 
@@ -386,7 +379,7 @@ class TurnExecutor:
                 _attachment_progress(
                     str(record.get("id") or ""),
                     "received",
-                    "Received and stored on Raspberry Pi",
+                    "Received PDF attachment",
                 )
 
             attachment_records, document_texts = await parse_chat_pdf_attachments(

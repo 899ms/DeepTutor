@@ -97,3 +97,40 @@ async def test_parser_failure_is_not_reported_as_empty_success(
     assert records[0]["extracted_text"] == ""
     assert "parser unavailable" in records[0]["extraction_error"]
     assert "could not be read" in contexts[0]
+
+
+@pytest.mark.asyncio
+async def test_parser_failure_preserves_usable_native_pdf_text(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    store = LocalDiskAttachmentStore(root=tmp_path / "attachments")
+    await store.put(session_id="session", attachment_id="pdf", filename="notes.pdf", data=b"pdf")
+    progress: list[str] = []
+
+    class Parser:
+        def parse(self, path: Path, **_: object) -> ParsedDocument:
+            raise RuntimeError("configured parser offline")
+
+    monkeypatch.setattr(
+        "deeptutor.services.session.attachment_parsing.get_parse_service", lambda: Parser()
+    )
+    records, contexts = await parse_chat_pdf_attachments(
+        [
+            {
+                "id": "pdf",
+                "filename": "notes.pdf",
+                "extracted_text": "native text",
+                "extracted_chars": 11,
+            }
+        ],
+        attachment_store=store,
+        session_id="session",
+        document_texts=["[File: notes.pdf]\nnative text"],
+        on_progress=lambda _aid, phase, _detail: progress.append(phase),
+    )
+
+    assert records[0]["extracted_text"] == "native text"
+    assert "configured parser offline" in records[0]["parser_error"]
+    assert "extraction_error" not in records[0]
+    assert contexts == ["[File: notes.pdf]\nnative text"]
+    assert progress == ["submitting", "fallback"]

@@ -46,6 +46,7 @@ async def parse_chat_pdf_attachments(
         )
         error = ""
         text = ""
+        fallback_text = str(record.get("extracted_text") or "").strip()
         if path is None:
             error = "stored attachment could not be found for configured parsing"
         elif limits.max_chars_total - total_chars <= 0:
@@ -72,17 +73,37 @@ async def parse_chat_pdf_attachments(
             record["extracted_text"] = text
             record["extracted_chars"] = len(text)
             record.pop("extraction_error", None)
+            record.pop("parser_error", None)
             total_chars += len(text)
+            phase = "completed"
+            detail = "Document parsing completed"
+        elif fallback_text:
+            # A configured cloud/local engine can be temporarily unavailable.
+            # Preserve usable native text rather than turning a readable PDF
+            # into a failed attachment; the parser error remains observable.
+            text = fallback_text
+            record["extracted_text"] = text
+            record["extracted_chars"] = len(text)
+            record.pop("extraction_error", None)
+            record["parser_error"] = error
+            total_chars += len(text)
+            _replace_context(contexts, filename, text, "")
+            phase = "fallback"
+            detail = f"Configured parser failed; using local PDF text: {error}"
         else:
             record["extracted_text"] = ""
             record["extracted_chars"] = 0
             record["extraction_error"] = error
-        _replace_context(contexts, filename, text, error)
+            _replace_context(contexts, filename, text, error)
+            phase = "failed"
+            detail = f"Document parsing failed: {error}"
+        if text and phase == "completed":
+            _replace_context(contexts, filename, text, "")
         if on_progress:
             on_progress(
                 attachment_id,
-                "completed" if text else "failed",
-                "Document parsing completed" if text else f"Document parsing failed: {error}",
+                phase,
+                detail,
             )
     return updated, contexts
 
