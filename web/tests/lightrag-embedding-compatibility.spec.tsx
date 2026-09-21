@@ -86,7 +86,6 @@ it("shows detail guidance while files and downloads remain accessible", async ()
       onCreate={vi.fn()}
       onUpload={vi.fn()}
       onReindex={vi.fn()}
-      onUpdatePendingIndexingPolicy={vi.fn()}
       onRetry={vi.fn()}
       onSetDefault={vi.fn()}
       onDelete={vi.fn()}
@@ -116,7 +115,6 @@ it("keeps version guidance visible alongside a failed rebuild", async () => {
       <KbIndexVersionsSection
         kb={{ ...kb, status: "error" }}
         onReindex={vi.fn()}
-        onUpdatePendingIndexingPolicy={vi.fn()}
       />,
     );
   });
@@ -167,12 +165,13 @@ it("shows the recorded bound version rather than a newer unbound publication", a
           },
         }}
         onReindex={vi.fn()}
-        onUpdatePendingIndexingPolicy={vi.fn()}
       />,
     );
   });
-  const source = screen.getByText("Version source").nextElementSibling;
-  expect(source).toHaveTextContent("version-1");
+  const boundRow = screen.getByText("version-1").closest("li");
+  const newerRow = screen.getByText("version-2").closest("li");
+  expect(boundRow?.querySelector('[title="Active version"]')).not.toBeNull();
+  expect(newerRow?.querySelector('[title="Inactive version"]')).not.toBeNull();
 });
 
 it.each(["ready", "error"])(

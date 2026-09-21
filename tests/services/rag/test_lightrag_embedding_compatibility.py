@@ -33,6 +33,7 @@ def embedding(monkeypatch: pytest.MonkeyPatch) -> EmbeddingConfig:
 def _snapshot() -> SimpleNamespace:
     return SimpleNamespace(
         vision_available=False,
+        embedding_config=None,
         persisted_policy=lambda: {"policy": "pinned", "fingerprint": "a" * 64},
     )
 
@@ -46,10 +47,23 @@ def _published(root: Path) -> None:
 
 
 def _pipeline(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> LightRagPipeline:
+    from deeptutor.services.embedding import get_embedding_config
+    from deeptutor.services.rag.pipelines.lightrag import roles
+
     pipeline = LightRagPipeline(str(tmp_path))
     monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
     monkeypatch.setattr(pipeline, "_resolve_mode", lambda *_args: "hybrid")
     monkeypatch.setattr(pipeline_module, "resolve_write_snapshot", lambda *_a, **_k: _snapshot())
+    monkeypatch.setattr(indexing_policy, "validate_target", lambda *_a, **_k: None)
+    monkeypatch.setattr(indexing_policy, "revalidate_snapshot", lambda snapshot: snapshot)
+
+    def with_embedding(snapshot, **_kwargs):
+        if snapshot.embedding_config is None:
+            snapshot.embedding_config = deepcopy(get_embedding_config())
+        return snapshot
+
+    monkeypatch.setattr(indexing_policy, "with_embedding", with_embedding)
+    monkeypatch.setattr(roles, "resolve_query_roles", dict)
     monkeypatch.setattr(pipeline, "_clear_pending_policy", lambda *_args: None)
     return pipeline
 

@@ -231,18 +231,24 @@ def lightrag_indexing_selection_from_settings() -> dict[str, str] | None:
 
 
 def resolve_lightrag_query_llm_config():
-    """Resolve the current LightRAG query model with the released fallback contract."""
+    """Resolve legacy settings, access-checking the active fallback as well."""
+    from deeptutor.multi_user.model_access import apply_allowed_llm_selection
     from deeptutor.services.model_selection.runtime import resolve_llm_config_for_selection
 
-    selection = lightrag_llm_selection_from_settings()
+    from .indexing_policy import _active_catalog_selection
+
+    selection = lightrag_llm_selection_from_settings() or _active_catalog_selection()
+    if selection is None:
+        raise LightRagNotConfiguredError("Choose an accessible LightRAG model in engine settings.")
+    apply_allowed_llm_selection(selection)
     try:
         return resolve_llm_config_for_selection(selection)
     except ValueError:
-        logger.warning(
-            "LightRAG LLM selection %s no longer exists in the catalog; using the active model",
-            selection,
-        )
-        return resolve_llm_config_for_selection(None)
+        fallback = _active_catalog_selection()
+        if fallback is None or fallback == selection:
+            raise
+        apply_allowed_llm_selection(fallback)
+        return resolve_llm_config_for_selection(fallback)
 
 
 def build_llm_model_func(
@@ -253,7 +259,13 @@ def build_llm_model_func(
 ):
     """Wrap DeepTutor's unified LLM callable for LightRAG.
 
-    Drops LightRAG's internal kwargs while preserving explicit ``messages``.
+    Preserve provider-facing structured-output requests while keeping
+    LightRAG's orchestration-only kwargs out of DeepTutor's provider layer.
+
+    ``enable_cot`` is intentionally an output-formatting switch in LightRAG,
+    not a request to enable provider reasoning. DeepTutor controls reasoning
+    through the frozen role configuration and returns answer content without
+    exposing provider reasoning text.
     """
     if llm_config is None:
         from deeptutor.services.llm import get_llm_client
@@ -269,10 +281,17 @@ def build_llm_model_func(
         system_prompt=None,
         history_messages=None,
         messages=None,
+        response_format=None,
+        enable_cot=False,
         **_ignored,
     ):
-        async def request():
-            async def complete():
+        del enable_cot
+
+        async def request() -> Any:
+            async def complete() -> Any:
+                provider_kwargs = {}
+                if response_format is not None:
+                    provider_kwargs["response_format"] = response_format
                 return await base(
                     prompt or "",
                     system_prompt=system_prompt,
@@ -280,6 +299,7 @@ def build_llm_model_func(
                     messages=messages,
                     max_retries=0,
                     allow_image_fallback=False,
+                    **provider_kwargs,
                 )
 
             if owner is None:
@@ -316,6 +336,7 @@ def build_vision_model_func(
         history_messages=None,
         image_inputs=None,
         messages=None,
+        response_format=None,
         **_ignored,
     ):
         if not isinstance(image_inputs, list) or len(image_inputs) != 1:
@@ -327,8 +348,11 @@ def build_vision_model_func(
         if not isinstance(image_data, str) or not image_data.strip():
             raise ValueError("LightRAG vision image input requires a non-empty base64 value")
 
-        async def request():
-            async def complete():
+        async def request() -> Any:
+            async def complete() -> Any:
+                provider_kwargs = {}
+                if response_format is not None:
+                    provider_kwargs["response_format"] = response_format
                 return await base(
                     prompt or "",
                     system_prompt=system_prompt,
@@ -337,6 +361,7 @@ def build_vision_model_func(
                     messages=messages,
                     max_retries=0,
                     allow_image_fallback=False,
+                    **provider_kwargs,
                 )
 
             if owner is None:
