@@ -79,6 +79,17 @@ vi.mock("@/hooks/useLLMOptions", () => ({
 vi.mock("@/features/knowledge/api/engines", async (original) => ({
   ...(await original<typeof import("@/features/knowledge/api/engines")>()),
   getLightRagConfig: async () => structuredClone(fixture.config),
+  getEngineModelOptions: async () => ({
+    embedding: {
+      active: { profile_id: "embedding", model_id: "a" },
+      options: ["a", "b"].map((model_id) => ({
+        profile_id: "embedding",
+        model_id,
+        label: `Embedding ${model_id}`,
+        profile_name: "Provider",
+      })),
+    },
+  }),
 }));
 vi.mock("@/features/knowledge/api/catalog", async (original) => ({
   ...(await original<typeof import("@/features/knowledge/api/catalog")>()),
@@ -135,7 +146,7 @@ beforeEach(() => {
   fixture.config.role_models.base = { ...fixture.selection };
 });
 
-it("shows version identifiers and a read-only rebuild confirmation, then requires reconfirmation after drift", async () => {
+it("shows version identifiers and embedding selection with read-only role confirmation, then requires reconfirmation after drift", async () => {
   const submit = vi
     .fn()
     .mockRejectedValueOnce(new Error("Default configuration changed"));
@@ -144,13 +155,18 @@ it("shows version identifiers and a read-only rebuild confirmation, then require
   fireEvent.click(screen.getByRole("button", { name: "Re-index" }));
   const dialog = screen.getByRole("dialog");
   await within(dialog).findByText("embedding-current · 3d");
-  expect(within(dialog).queryByRole("combobox")).not.toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("combobox", { name: "Embedding model" }),
+  ).toBeInTheDocument();
   fixture.preview.mockResolvedValue(preview("second", "embedding-new"));
   fireEvent.click(
     within(dialog).getByRole("button", { name: "Confirm rebuild" }),
   );
   await within(dialog).findByText("embedding-new · 3d");
-  expect(submit).toHaveBeenCalledExactlyOnceWith("first");
+  expect(submit).toHaveBeenCalledExactlyOnceWith("first", {
+    profile_id: "embedding",
+    model_id: "a",
+  });
   expect(
     within(dialog).getByText("Default configuration changed"),
   ).toBeInTheDocument();
@@ -161,10 +177,29 @@ it("shows version identifiers and a read-only rebuild confirmation, then require
   await waitFor(() =>
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
   );
-  expect(submit).toHaveBeenLastCalledWith("second");
+  expect(submit).toHaveBeenLastCalledWith("second", {
+    profile_id: "embedding",
+    model_id: "a",
+  });
 });
 
-it("has no model or rebuild action for an empty knowledge base", () => {
+it("refreshes confirmation when the selected embedding changes", async () => {
+  const submit = vi.fn(async () => {});
+  render(<KbIndexVersionsSection kb={kb} onReindex={submit} />);
+  fireEvent.click(screen.getByRole("button", { name: "Re-index" }));
+  const dialog = screen.getByRole("dialog");
+  await within(dialog).findByText("embedding-current · 3d");
+  fixture.preview.mockResolvedValue(preview("selected-b", "embedding-b"));
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Embedding model" }), {
+    target: { value: JSON.stringify(["embedding", "b"]) },
+  });
+  await within(dialog).findByText("embedding-b · 3d");
+  expect(fixture.preview).toHaveBeenLastCalledWith("papers", { profile_id: "embedding", model_id: "b" });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm rebuild" }));
+  await waitFor(() => expect(submit).toHaveBeenCalledWith("selected-b", { profile_id: "embedding", model_id: "b" }));
+});
+
+it("retains upstream embedding action but no role overrides for an empty knowledge base", () => {
   render(
     <KbIndexVersionsSection
       kb={{
@@ -178,7 +213,7 @@ it("has no model or rebuild action for an empty knowledge base", () => {
       onReindex={vi.fn()}
     />,
   );
-  expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Re-index" })).toBeInTheDocument();
   expect(screen.queryByText("Index configuration")).not.toBeInTheDocument();
 });
 
@@ -251,13 +286,19 @@ it.each(["header", "documents"])(
       within(dialog).getByRole("button", { name: "Confirm rebuild" }),
     );
     await within(dialog).findByText("embedding-new · 3d");
-    expect(reindex).toHaveBeenCalledExactlyOnceWith("papers", "first");
+    expect(reindex).toHaveBeenCalledExactlyOnceWith("papers", "first", {
+      profile_id: "embedding",
+      model_id: "a",
+    });
     reindex.mockResolvedValue(undefined);
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Confirm rebuild" }),
     );
     await waitFor(() =>
-      expect(reindex).toHaveBeenLastCalledWith("papers", "retry-new"),
+      expect(reindex).toHaveBeenLastCalledWith("papers", "retry-new", {
+        profile_id: "embedding",
+        model_id: "a",
+      }),
     );
     expect(retry).not.toHaveBeenCalled();
   },

@@ -1,6 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useEmbeddingModels } from "@/hooks/useEmbeddingModels";
+import type { EmbeddingModelSelection } from "@/features/knowledge/model/types";
+import EmbeddingModelSelector from "./EmbeddingModelSelector";
 import { useTranslation } from "react-i18next";
 import {
   AlertTriangle,
@@ -15,16 +18,15 @@ import {
   currentLightRagBuildCandidate,
   formatKnowledgeTimestamp,
   kbCanReindex,
+  kbHasLiveProgress,
   kbNeedsReindex,
   lightRagVersionDisplayState,
   providerUsesEmbeddingMetadata,
   resolveKbStatus,
-  resolveProgressPercent,
   type IndexVersion,
   type KnowledgeBase,
 } from "@/lib/knowledge-helpers";
 import type { TaskState } from "@/hooks/useKnowledgeProgress";
-import ProcessLogs from "@/components/common/ProcessLogs";
 import Modal from "@/components/common/Modal";
 import {
   getReindexConfig,
@@ -32,11 +34,15 @@ import {
 } from "@/features/knowledge/api/catalog";
 import KbIndexFailureBanner from "./KbIndexFailureBanner";
 import LightRagIndexingProvenance from "./LightRagIndexingProvenance";
+import { knowledgeBaseRef } from "@/lib/knowledge-helpers";
 
 interface KbIndexVersionsSectionProps {
   kb: KnowledgeBase;
   task?: TaskState;
-  onReindex: (configFingerprint?: string) => Promise<void>;
+  onReindex: (
+    configFingerprint?: string,
+    embeddingModel?: EmbeddingModelSelection,
+  ) => Promise<void>;
 }
 
 export default function KbIndexVersionsSection({
@@ -53,6 +59,13 @@ export default function KbIndexVersionsSection({
   const [configLoading, setConfigLoading] = useState(false);
   const provider = kb.statistics?.rag_provider || "llamaindex";
   const isLightRag = provider === "lightrag";
+  const needsEmbedding = ["llamaindex", "lightrag", "graphrag"].includes(
+    provider,
+  );
+  const embeddingCatalog = useEmbeddingModels(
+    kb.metadata?.embedding_selection,
+    modelDialogOpen && needsEmbedding,
+  );
   const pageIndexProvider = !providerUsesEmbeddingMetadata(provider);
   const modelInsensitiveProvider = pageIndexProvider || isLightRag;
   const versions = kb.statistics?.index_versions ?? [];
@@ -64,7 +77,6 @@ export default function KbIndexVersionsSection({
   const mismatch = Boolean(kb.metadata?.embedding_mismatch);
   const isReindexingHere =
     (task?.kind === "reindex" || task?.kind === "retry") && task.executing;
-  const percent = resolveProgressPercent(kb.progress);
   const lastIndexed = formatKnowledgeTimestamp(kb.metadata?.last_indexed_at);
   const lastIndexedCount = kb.metadata?.last_indexed_count;
 
@@ -80,7 +92,12 @@ export default function KbIndexVersionsSection({
     setRebuildConfig(null);
     setConfigLoading(true);
     try {
-      setRebuildConfig(await getReindexConfig(kb.name));
+      setRebuildConfig(
+        await getReindexConfig(
+          knowledgeBaseRef(kb),
+          embeddingCatalog.selection || undefined,
+        ),
+      );
     } catch (error) {
       setDialogError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -88,11 +105,41 @@ export default function KbIndexVersionsSection({
     }
   };
 
+  const selectedProfile = embeddingCatalog.selection?.profile_id;
+  const selectedModel = embeddingCatalog.selection?.model_id;
+  const kbRef = knowledgeBaseRef(kb);
+  useEffect(() => {
+    if (!modelDialogOpen || !isLightRag || !selectedProfile || !selectedModel)
+      return;
+    let cancelled = false;
+    setRebuildConfig(null);
+    setConfigLoading(true);
+    setDialogError(null);
+    void getReindexConfig(kbRef, {
+      profile_id: selectedProfile,
+      model_id: selectedModel,
+    })
+      .then((config) => {
+        if (!cancelled) setRebuildConfig(config);
+      })
+      .catch((error) => {
+        if (!cancelled)
+          setDialogError(
+            error instanceof Error ? error.message : String(error),
+          );
+      })
+      .finally(() => {
+        if (!cancelled) setConfigLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modelDialogOpen, isLightRag, selectedProfile, selectedModel, kbRef]);
+
   const handleReindex = async () => {
-    if (isLightRag) {
+    if (isLightRag || needsEmbedding) {
       setDialogError(null);
       setModelDialogOpen(true);
-      await loadRebuildConfig();
       return;
     }
     setSubmitting(true);
@@ -104,21 +151,30 @@ export default function KbIndexVersionsSection({
   };
 
   const handleModelSubmit = async () => {
-    if (!rebuildConfig) return;
+    if (isLightRag && !rebuildConfig) return;
     setSubmitting(true);
     setDialogError(null);
     try {
-      await onReindex(rebuildConfig.fingerprint);
+      await onReindex(
+        rebuildConfig?.fingerprint,
+        embeddingCatalog.selection || undefined,
+      );
       setModelDialogOpen(false);
     } catch (error) {
       setDialogError(error instanceof Error ? error.message : String(error));
-      await loadRebuildConfig();
+      if (isLightRag) await loadRebuildConfig();
     } finally {
       setSubmitting(false);
     }
   };
 
-  const showReindexCta = kbCanReindex(kb);
+  const showReindexCta =
+    kbCanReindex(kb) ||
+    (needsEmbedding &&
+      !kb.read_only &&
+      !kbHasLiveProgress(kb) &&
+      kb.statistics?.raw_documents === 0 &&
+      !versions.some((version) => version.ready));
 
   return (
     <div className="space-y-4">
@@ -159,7 +215,7 @@ export default function KbIndexVersionsSection({
                       ? "Rebuild with current defaults. The previous index version is preserved until the rebuild succeeds."
                       : pageIndexProvider
                         ? "Rebuild this PageIndex knowledge base. Existing index versions are preserved."
-                        : "Click Re-index to rebuild this knowledge base with the active embedding model. Existing index versions are preserved.",
+                        : "Choose an embedding model to rebuild this knowledge base. Existing index versions are preserved.",
                   )
             }
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors disabled:opacity-50 ${
@@ -185,6 +241,26 @@ export default function KbIndexVersionsSection({
       </div>
 
       {isError && <KbIndexFailureBanner kb={kb} />}
+      {kb.metadata?.embedding_status === "missing" && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 p-3 text-xs text-amber-700"
+        >
+          {t(
+            "The bound embedding model was deleted. Your documents and indexes are preserved. Select another model to re-index this knowledge base.",
+          )}
+        </p>
+      )}
+      {kb.metadata?.embedding_status === "unconfigured" && (
+        <p
+          role="alert"
+          className="rounded-lg border border-amber-300 p-3 text-xs text-amber-700"
+        >
+          {t(
+            "The bound embedding model is not configured. Check its provider settings.",
+          )}
+        </p>
+      )}
 
       {isLightRag && kb.metadata?.indexing_model_unavailable && (
         <p
@@ -267,43 +343,6 @@ export default function KbIndexVersionsSection({
         </div>
       )}
 
-      {(task?.kind === "reindex" || task?.kind === "retry") &&
-        (task.taskId || task.logs.length > 0 || task.executing) && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between text-[11px] text-[var(--muted-foreground)]">
-              <span>
-                {task.label}
-                {task.taskId ? ` · ${task.taskId}` : ""}
-              </span>
-              {task.executing && percent > 0 && (
-                <span className="font-medium text-[var(--foreground)]">
-                  {percent}%
-                </span>
-              )}
-            </div>
-            <ProcessLogs
-              logs={task.logs}
-              executing={task.executing}
-              title={t("Re-index Process")}
-            />
-            {task.executing && (
-              <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]/70">
-                <div
-                  className="h-full rounded-full bg-[var(--primary)] transition-all duration-300"
-                  style={{ width: `${Math.max(percent, 4)}%` }}
-                />
-              </div>
-            )}
-            {task.error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-                <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
-                  {task.error}
-                </pre>
-              </div>
-            )}
-          </div>
-        )}
-
       <Modal
         isOpen={modelDialogOpen}
         onClose={() => !submitting && setModelDialogOpen(false)}
@@ -322,7 +361,14 @@ export default function KbIndexVersionsSection({
             <button
               type="button"
               onClick={() => void handleModelSubmit()}
-              disabled={submitting || configLoading || !rebuildConfig}
+              disabled={
+                submitting ||
+                (isLightRag && (configLoading || !rebuildConfig)) ||
+                (needsEmbedding &&
+                  (!embeddingCatalog.selection ||
+                    embeddingCatalog.loading ||
+                    !!embeddingCatalog.error))
+              }
               className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] disabled:opacity-50"
             >
               {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
@@ -332,9 +378,15 @@ export default function KbIndexVersionsSection({
         }
       >
         <div className="space-y-3 p-4">
+          {needsEmbedding && (
+            <EmbeddingModelSelector
+              catalog={embeddingCatalog}
+              disabled={submitting}
+            />
+          )}
           <p className="text-[12px] text-[var(--muted-foreground)]">
             {t(
-              "This rebuild uses the defaults shown below for the full index. Change models in Settings. The configuration is fixed when you confirm; the previous version is preserved if rebuilding fails.",
+              "This rebuild uses the selected embedding and the role defaults shown below. Change role models in Settings. The configuration is fixed when you confirm; the previous version is preserved if rebuilding fails.",
             )}
           </p>
           {configLoading && (

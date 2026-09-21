@@ -138,8 +138,11 @@ def role_environment(tmp_path, monkeypatch):
         policy, "supports_vision", lambda _binding, model: state["vision"].get(model, False)
     )
     monkeypatch.setattr(policy, "_active_catalog_selection", lambda: choice(0))
+    from deeptutor.services.embedding.config import scoped_embedding_config
+
     monkeypatch.setattr(
-        "deeptutor.services.embedding.get_embedding_config", lambda: state["embedding"]
+        "deeptutor.services.embedding.get_embedding_config",
+        lambda: scoped_embedding_config() or state["embedding"],
     )
     yield state
     reset_current_user(token)
@@ -953,6 +956,119 @@ def test_rebuild_confirmation_rejects_changed_defaults_without_queueing(
         assert response.status_code == 200
         assert len(queued) == 1 and len(captured) == 1
         assert captured[0].embedding_config.model == "new-default"
+
+
+def test_rebuild_confirmation_preserves_binding_and_freezes_explicit_selection(
+    role_environment, tmp_path, monkeypatch
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from deeptutor.api.routers import knowledge
+
+    selections = {name: {"profile_id": "embedding", "model_id": name} for name in ("a", "b")}
+    configs = {
+        name: EmbeddingConfig(
+            model=f"embed-{name}", dim=3, api_key="secret", base_url="https://embed.test"
+        )
+        for name in selections
+    }
+    entry = {"rag_provider": "lightrag", "status": "ready", "embedding_selection": selections["b"]}
+    monkeypatch.setattr(knowledge, "_writable_kb", lambda _name: (object(), "kb", tmp_path))
+    monkeypatch.setattr(knowledge, "_load_kb_entry_or_404", lambda *_a: entry)
+    monkeypatch.setattr(knowledge, "_assert_provider_ready", lambda _provider: None)
+
+    def resolve(value, provider, saved=None):
+        selection = json.loads(value) if value else saved["embedding_selection"]
+        return selection, configs[selection["model_id"]]
+
+    monkeypatch.setattr(knowledge, "_resolve_embedding_form", resolve)
+    monkeypatch.setattr(knowledge, "_mark_kb_queued_for_processing", lambda *_a, **_k: None)
+    (tmp_path / "kb" / "raw").mkdir(parents=True)
+    (tmp_path / "kb" / "raw" / "doc.md").write_text("document")
+    captured = []
+
+    async def task(**kwargs):
+        role_environment["embedding"].model = "later-global"
+        captured.append(kwargs)
+
+    monkeypatch.setattr(knowledge, "run_reindex_task", task)
+    app = FastAPI()
+    app.include_router(knowledge.router, prefix="/api")
+    with TestClient(app) as client:
+        bound = client.get("/api/knowledge-bases/kb/reindex-config").json()
+        assert bound["embedding"]["model"] == "embed-b"
+        assert bound["embedding_selection"] == selections["b"]
+        role_environment["embedding"].model = "changed-global"
+        assert (
+            client.get("/api/knowledge-bases/kb/reindex-config").json()["fingerprint"]
+            == bound["fingerprint"]
+        )
+        data = {
+            "embedding_model": json.dumps(selections["a"]),
+            "config_fingerprint": bound["fingerprint"],
+        }
+        assert client.post("/api/knowledge-bases/kb/reindex", data=data).status_code == 409
+        assert not captured
+        selected = client.get(
+            "/api/knowledge-bases/kb/reindex-config",
+            params={"embedding_model": data["embedding_model"]},
+        ).json()
+        data["config_fingerprint"] = selected["fingerprint"]
+        assert client.post("/api/knowledge-bases/kb/reindex", data=data).status_code == 200
+    assert captured[0]["embedding_selection"] == selections["a"]
+    assert captured[0]["embedding_config"].model == "embed-a"
+    assert captured[0]["indexing_snapshot"].embedding_config.model == "embed-a"
+    assert entry["embedding_selection"] == selections["b"]
+
+
+def test_append_policy_and_target_follow_older_bound_version(
+    role_environment, monkeypatch, tmp_path
+):
+    from deeptutor.services.embedding.config import embedding_config_scope
+    from deeptutor.services.rag import embedding_binding
+
+    monkeypatch.setattr(engine, "installed_version", lambda: engine.LIGHTRAG_VERSION)
+    kb = tmp_path / "kb"
+    original = deepcopy(role_environment["embedding"])
+    first_policy = policy.freeze_roles().persisted_policy()
+    first = kb / "version-1"
+    _published(first, first_policy)
+    role_environment["embedding"].model = "other-vector-space"
+    role_environment["settings"]["role_models"]["extract"] = {
+        "mode": "model",
+        "selection": choice(1),
+    }
+    second = kb / "version-2"
+    _published(second, policy.freeze_roles().persisted_policy())
+    for root in (first, second):
+        workspace = root / engine.workspace_for(root)
+        workspace.mkdir()
+        (workspace / "kv_store_doc_status.json").write_text('{"doc":{"status":"processed"}}')
+    second_before = (second / "meta.json").read_bytes()
+    monkeypatch.setattr(embedding_binding, "binding_status", lambda _entry: ("ready", original))
+    accepted = policy.bind_target(
+        policy.resolve_write_snapshot(kb, base_dir=str(tmp_path), kb_name="kb"), kb
+    )
+    assert accepted.target_version == str(first)
+    assert accepted.extract.config.model == "model-0"
+    assert accepted.embedding_config.model == original.model
+    pipeline = LightRagPipeline(str(tmp_path))
+    monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
+
+    async def index(root, _files, _progress, snapshot):
+        assert root == first
+        assert snapshot.extract.config.model == "model-0"
+        return BatchOutcome(
+            1, accepted=1, processed=("new.md",), indexing_policy=snapshot.persisted_policy()
+        )
+
+    monkeypatch.setattr(pipeline, "_run_indexing", index)
+    with embedding_config_scope(original):
+        assert asyncio.run(
+            pipeline.add_documents("kb", ["new.md"], accepted_indexing_snapshot=accepted)
+        )
+    assert (second / "meta.json").read_bytes() == second_before
 
 
 def test_query_does_not_require_old_extract_or_vlm_access(role_environment, monkeypatch, tmp_path):

@@ -431,6 +431,28 @@ def revalidate_snapshot(snapshot: IndexingPolicySnapshot) -> IndexingPolicySnaps
     )
 
 
+def _bound_published_root(kb_dir: Path) -> Path | None:
+    """Use the published version selected by the KB's existing embedding binding."""
+    from deeptutor.services.config.knowledge_base_config import KnowledgeBaseConfigService
+    from deeptutor.services.embedding.config import embedding_config_scope
+    from deeptutor.services.rag.embedding_binding import binding_status, bound_graph_storage_root
+
+    from .storage import latest_published_root
+
+    latest = latest_published_root(kb_dir)
+    entry = KnowledgeBaseConfigService(kb_dir.parent / "kb_config.json").get_kb_config(kb_dir.name)
+    _, config = binding_status(entry)
+    if config is not None:
+        with embedding_config_scope(config):
+            try:
+                return bound_graph_storage_root(kb_dir, "lightrag", latest)
+            except ValueError:
+                # A rebuild must still be able to replace an incompatible index.
+                # Query/append binding checks independently reject this identity.
+                pass
+    return latest
+
+
 def _target_policy_key(kb_dir: Path) -> str | None:
     policy = effective_policy(kb_dir, base_dir=str(kb_dir.parent), kb_name=kb_dir.name)
     return (
@@ -464,10 +486,8 @@ def bind_target(
     snapshot: IndexingPolicySnapshot, kb_dir: Path, *, protect_contents: bool = False
 ) -> IndexingPolicySnapshot:
     """Bind a snapshot to the current index and optionally its content revision."""
-    from .storage import latest_published_root
-
-    target = latest_published_root(kb_dir)
-    snapshot = with_embedding(snapshot)
+    target = _bound_published_root(kb_dir)
+    snapshot = with_embedding(snapshot, kb_dir=kb_dir)
     return replace(
         snapshot,
         target_version=str(target) if target else None,
@@ -479,11 +499,9 @@ def bind_target(
 
 def validate_target(snapshot: IndexingPolicySnapshot, kb_dir: Path) -> None:
     """Reject a queued write if its bound index, policy, or revision changed."""
-    from .storage import latest_published_root
-
     if not snapshot.target_bound:
         return
-    target = latest_published_root(kb_dir)
+    target = _bound_published_root(kb_dir)
     if (
         snapshot.target_version != (str(target) if target else None)
         or snapshot.target_policy != _target_policy_key(kb_dir)
@@ -510,9 +528,9 @@ def with_image_analysis(
 
 def effective_policy(kb_dir: Path, *, base_dir: str, kb_name: str) -> dict[str, Any] | None:
     """Return published policy first, then pre-publication pending policy."""
-    from .storage import latest_published_root, read_published_policy
+    from .storage import read_published_policy
 
-    root = latest_published_root(kb_dir)
+    root = _bound_published_root(kb_dir)
     published = read_published_policy(root)
     if published is not None:
         return published
@@ -553,13 +571,28 @@ def resolve_write_snapshot(
     return snapshot_from_persisted(policy)
 
 
-def with_embedding(snapshot: IndexingPolicySnapshot) -> IndexingPolicySnapshot:
+def with_embedding(
+    snapshot: IndexingPolicySnapshot, *, kb_dir: Path | None = None
+) -> IndexingPolicySnapshot:
     """Freeze embedding configuration once, before accepting an indexing task."""
     if snapshot.embedding_config is not None:
         return snapshot
     from deeptutor.services.embedding import get_embedding_config
 
-    config = deepcopy(get_embedding_config())
+    config = None
+    if kb_dir is not None:
+        from deeptutor.services.config.knowledge_base_config import KnowledgeBaseConfigService
+        from deeptutor.services.rag.embedding_binding import binding_status
+
+        entry = KnowledgeBaseConfigService(kb_dir.parent / "kb_config.json").get_kb_config(
+            kb_dir.name
+        )
+        state, config = binding_status(entry)
+        if state in {"missing", "unconfigured", "changed"}:
+            raise IndexingPolicyError(
+                "The bound embedding model is unavailable or changed. Restore its configuration or rebuild."
+            )
+    config = deepcopy(config if config is not None else get_embedding_config())
     if not config.dim:
         raise IndexingPolicyError(
             "Configure an embedding model with a known dimension in Settings."
@@ -567,7 +600,9 @@ def with_embedding(snapshot: IndexingPolicySnapshot) -> IndexingPolicySnapshot:
     return replace(snapshot, embedding_config=config)
 
 
-def public_rebuild_config(snapshot: IndexingPolicySnapshot) -> dict[str, Any]:
+def public_rebuild_config(
+    snapshot: IndexingPolicySnapshot, embedding_selection: dict | None = None
+) -> dict[str, Any]:
     """Bind the confirmation to resolved identities without exposing credentials."""
     from deeptutor.services.rag.embedding_signature import signature_from_config
 
@@ -575,9 +610,16 @@ def public_rebuild_config(snapshot: IndexingPolicySnapshot) -> dict[str, Any]:
     signature = signature_from_config(snapshot.embedding_config)
     policy = snapshot.persisted_policy()
     return {
-        "fingerprint": _fingerprint({"indexing_policy": policy, "embedding": signature.hash()}),
+        "fingerprint": _fingerprint(
+            {
+                "indexing_policy": policy,
+                "embedding": signature.hash(),
+                "embedding_selection": embedding_selection,
+            }
+        ),
         "indexing_policy": public_policy(policy),
         "embedding": {"model": signature.model, "dimension": signature.dimension},
+        "embedding_selection": embedding_selection,
     }
 
 

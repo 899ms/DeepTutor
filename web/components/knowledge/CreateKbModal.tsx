@@ -1,5 +1,7 @@
 "use client";
 
+import type { EmbeddingModelSelection } from "@/features/knowledge/model/types";
+
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -14,6 +16,8 @@ import {
   Plus,
   Server,
 } from "lucide-react";
+import { useEmbeddingModels } from "@/hooks/useEmbeddingModels";
+import EmbeddingModelSelector from "./EmbeddingModelSelector";
 import Modal from "@/components/common/Modal";
 import { useImaConnection } from "@/hooks/useImaConnection";
 import { useLLMOptions } from "@/hooks/useLLMOptions";
@@ -75,6 +79,7 @@ interface CreateKbModalProps {
     files: File[];
     pageindexMode?: "flash" | "standard";
     searchMode?: string;
+    embeddingModel?: EmbeddingModelSelection;
   }) => Promise<void>;
   /** Link a pre-built engine index folder in place (no copy, no re-index). */
   onConnectLinkedFolder: (params: {
@@ -407,6 +412,14 @@ export default function CreateKbModal({
   // all today, which is how a "/" name got registered in the first place.
   const nameProblems = forbiddenKbNameChars(trimmed);
 
+  const needsEmbedding = ["llamaindex", "lightrag", "graphrag"].includes(
+    provider,
+  );
+  const embeddingCatalog = useEmbeddingModels(
+    undefined,
+    isOpen && mode === "new" && needsEmbedding,
+  );
+
   const canSubmit = (() => {
     if (submitting) return false;
     if (!trimmed) return false;
@@ -434,6 +447,13 @@ export default function CreateKbModal({
             lightRagIndexingDefaults,
             llmCatalog.options,
           ))
+      )
+        return false;
+      if (
+        needsEmbedding &&
+        (!embeddingCatalog.selection ||
+          embeddingCatalog.loading ||
+          embeddingCatalog.error)
       )
         return false;
       return !providerUnavailable;
@@ -537,6 +557,9 @@ export default function CreateKbModal({
             pageindexMode:
               isPageIndexOSS && pageIndexMode ? pageIndexMode : undefined,
             searchMode: retrievalMode || undefined,
+            embeddingModel: needsEmbedding
+              ? embeddingCatalog.selection || undefined
+              : undefined,
           });
         }
       } else if (linkIsIma) {
@@ -667,21 +690,29 @@ export default function CreateKbModal({
             setFiles={setFiles}
             policyForProvider={policyForProvider}
             indexingModelField={
-              provider === "lightrag" &&
-              (lightRagConfigError ||
-                llmCatalog.error ||
-                (lightRagConfigLoaded &&
-                  !llmCatalog.loading &&
-                  !isCompleteIndexingSelection(
-                    lightRagIndexingDefaults,
-                    llmCatalog.options,
-                  ))) ? (
-                <p role="alert" className="text-[12px] text-red-600">
-                  {t(
-                    "Configure valid LightRAG defaults in Settings before creating a knowledge base.",
-                  )}
-                </p>
-              ) : null
+              <div className="space-y-4">
+                {needsEmbedding && (
+                  <EmbeddingModelSelector
+                    catalog={embeddingCatalog}
+                    disabled={submitting}
+                  />
+                )}
+                {provider === "lightrag" &&
+                (lightRagConfigError ||
+                  llmCatalog.error ||
+                  (lightRagConfigLoaded &&
+                    !llmCatalog.loading &&
+                    !isCompleteIndexingSelection(
+                      lightRagIndexingDefaults,
+                      llmCatalog.options,
+                    ))) ? (
+                  <p role="alert" className="text-[12px] text-red-600">
+                    {t(
+                      "Configure valid LightRAG defaults in Settings before creating a knowledge base.",
+                    )}
+                  </p>
+                ) : null}
+              </div>
             }
             connectionForm={
               isLightRagServer ? (

@@ -54,9 +54,15 @@ test("create uses defaults and re-index sends only the confirmed fingerprint", a
     restore();
   }
 
-  assert.equal(requests[0].url, "/api/knowledge-bases");
+  assert.equal(
+    new URL(requests[0].url, "http://localhost").pathname,
+    "/api/knowledge-bases",
+  );
   assert.equal(requests[0].form.has("indexing_llm"), false);
-  assert.equal(requests[1].url, "/api/knowledge-bases/papers/reindex");
+  assert.equal(
+    new URL(requests[1].url, "http://localhost").pathname,
+    "/api/knowledge-bases/papers/reindex",
+  );
   assert.equal(
     requests[1].form.get("config_fingerprint"),
     "confirmed-fingerprint",

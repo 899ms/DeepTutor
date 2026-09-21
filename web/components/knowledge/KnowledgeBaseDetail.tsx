@@ -1,5 +1,8 @@
 "use client";
 
+import { knowledgeBaseRef } from "@/lib/knowledge-helpers";
+import type { EmbeddingModelSelection } from "@/features/knowledge/model/types";
+
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -30,6 +33,7 @@ import {
 import type { TaskState } from "@/hooks/useKnowledgeProgress";
 import type { HistoryEntry } from "@/hooks/useKnowledgeHistory";
 import KbStatusBadge from "./KbStatusBadge";
+import KbTaskLogs from "./KbTaskLogs";
 import KbFilesTab from "./KbFilesTab";
 import KbDocumentsSection from "./KbDocumentsSection";
 import KbIndexVersionsSection from "./KbIndexVersionsSection";
@@ -52,7 +56,11 @@ interface KnowledgeBaseDetailProps {
     files: File[],
     destSubdir?: string,
   ) => Promise<void>;
-  onReindex: (kbName: string, configFingerprint?: string) => Promise<void>;
+  onReindex: (
+    kbName: string,
+    configFingerprint?: string,
+    embeddingModel?: EmbeddingModelSelection,
+  ) => Promise<void>;
   onRetry: (kbName: string) => Promise<void>;
   onSetDefault: (kbName: string) => Promise<void>;
   onDelete: (kbName: string) => Promise<void>;
@@ -154,7 +162,7 @@ export default function KnowledgeBaseDetail({
     }
     setRetrySubmitting(true);
     try {
-      await onRetry(kb.name);
+      await onRetry(knowledgeBaseRef(kb));
     } finally {
       setRetrySubmitting(false);
     }
@@ -201,7 +209,7 @@ export default function KnowledgeBaseDetail({
                     {t("Default")}
                   </span>
                 )}
-                {kb.assigned && (
+                {(kb.assigned || kb.provenance_label) && (
                   <span className="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
                     {kb.provenance_label || t("Assigned by admin")}
                   </span>
@@ -272,9 +280,10 @@ export default function KnowledgeBaseDetail({
       </div>
 
       {/* Body */}
+      <KbTaskLogs key={knowledgeBaseRef(kb)} kb={kb} task={task} />
       <div className="min-h-0 flex-1 overflow-hidden">
         {activeSection === "files" ? (
-          <KbFilesTab key={kb.name} kb={kb} task={task} />
+          <KbFilesTab key={knowledgeBaseRef(kb)} kb={kb} task={task} />
         ) : (
           <div className="h-full overflow-y-auto px-6 py-5">
             <div className={fullBleed ? "" : "mx-auto max-w-3xl"}>
@@ -284,12 +293,12 @@ export default function KnowledgeBaseDetail({
                   uploadPolicy={uploadPolicy}
                   task={task}
                   history={history}
-                  onClearHistory={() => onClearHistory(kb.name)}
+                  onClearHistory={() => onClearHistory(knowledgeBaseRef(kb))}
                   onRetry={handleRetry}
                   onUpload={(files, destSubdir) =>
                     kb.read_only
                       ? Promise.resolve()
-                      : onUpload(kb.name, files, destSubdir)
+                      : onUpload(knowledgeBaseRef(kb), files, destSubdir)
                   }
                 />
               )}
@@ -297,32 +306,45 @@ export default function KnowledgeBaseDetail({
                 <KbIndexVersionsSection
                   kb={kb}
                   task={task}
-                  onReindex={(configFingerprint) =>
+                  onReindex={(configFingerprint, embeddingModel) =>
                     kb.read_only
                       ? Promise.resolve()
-                      : status === "error" && kbProvider(kb) !== "lightrag"
+                      : status === "error" &&
+                          kbProvider(kb) !== "lightrag" &&
+                          !embeddingModel
                         ? handleRetry()
-                        : onReindex(kb.name, configFingerprint)
+                        : onReindex(
+                            knowledgeBaseRef(kb),
+                            configFingerprint,
+                            embeddingModel,
+                          )
                   }
                 />
               )}
               {activeSection === "github" && (
-                <KbGitHubSourcesSection kbName={kb.name} />
+                <KbGitHubSourcesSection kbName={knowledgeBaseRef(kb)} />
               )}
               {activeSection === "web" && (
-                <KbWebSourcesSection kbName={kb.name} />
+                <KbWebSourcesSection kbName={knowledgeBaseRef(kb)} />
               )}
               {activeSection === "devices" && (
-                <KbMarginNoteDevicesSection key={kb.name} kb={kb} />
+                <KbMarginNoteDevicesSection
+                  key={knowledgeBaseRef(kb)}
+                  kb={kb}
+                />
               )}
               {activeSection === "settings" && (
                 <KbSettingsSection
                   kb={kb}
                   onSetDefault={() =>
-                    kb.read_only ? Promise.resolve() : onSetDefault(kb.name)
+                    kb.read_only
+                      ? Promise.resolve()
+                      : onSetDefault(knowledgeBaseRef(kb))
                   }
                   onDelete={() =>
-                    kb.read_only ? Promise.resolve() : onDelete(kb.name)
+                    kb.read_only
+                      ? Promise.resolve()
+                      : onDelete(knowledgeBaseRef(kb))
                   }
                 />
               )}

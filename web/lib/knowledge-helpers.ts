@@ -171,6 +171,8 @@ export interface KnowledgeBase {
     rag_provider?: string;
     needs_reindex?: boolean;
     embedding_model?: string;
+    embedding_selection?: { profile_id: string; model_id: string };
+    embedding_status?: "ready" | "missing" | "changed" | "unconfigured" | "legacy";
     embedding_dim?: number;
     embedding_mismatch?: boolean;
     /** Connected-source kind (e.g. "obsidian", "subagent"); absent for ordinary indexed KBs. */
@@ -429,6 +431,7 @@ export const kbRequiresLightRagRebuildBeforeAppend = (
 
 export const kbIsUploadable = (kb: KnowledgeBase): boolean =>
   resolveKbStatus(kb) === "ready" &&
+  !kbEmbeddingUnavailable(kb) &&
   !kbNeedsReindex(kb) &&
   !kb.metadata?.indexing_model_unavailable &&
   !kbRequiresLightRagRebuildBeforeAppend(kb);
@@ -439,6 +442,7 @@ export const kbCanUploadDocuments = (
 ): boolean =>
   kbIsUploadable(kb) ||
   (resolveKbStatus(kb) === "error" &&
+    !kbEmbeddingUnavailable(kb) &&
     !indexingActive &&
     !kb.metadata?.indexing_model_unavailable &&
     !kbRequiresLightRagRebuildBeforeAppend(kb));
@@ -452,12 +456,15 @@ export const kbCanReindex = (kb: KnowledgeBase): boolean => {
       : true;
   if (!hasSourceFiles) return false;
   if (status === "error") return true;
-  if (kbProvider(kb) === "lightrag") return !kbHasLiveProgress(kb);
+  if (["llamaindex", "lightrag", "graphrag"].includes(kbProvider(kb))) return !kbHasLiveProgress(kb);
   return (
     Boolean(kb.statistics?.needs_reindex) ||
     kb.statistics?.active_match === false
   );
 };
+
+export const kbEmbeddingUnavailable = (kb: KnowledgeBase): boolean =>
+  ["missing", "changed", "unconfigured"].includes(kb.metadata?.embedding_status || "");
 
 const LIVE_PROGRESS_STAGES = new Set([
   "initializing",
@@ -528,4 +535,9 @@ export function validateFiles(
     invalidFiles: items.filter((item) => !item.valid),
     totalBytes: files.reduce((total, file) => total + file.size, 0),
   };
+}
+
+/** Resource identity is distinct from its display name across workspace catalogs. */
+export function knowledgeBaseRef(kb: { id?: string; name: string; assigned?: boolean }): string {
+  return kb.assigned && kb.id ? kb.id : kb.id?.startsWith('account:kb:') || kb.id?.startsWith('workspace:') ? kb.id : kb.name;
 }
