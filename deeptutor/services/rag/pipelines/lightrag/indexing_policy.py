@@ -39,6 +39,12 @@ class IndexingModelChangedError(IndexingPolicyError):
     code = "reindex_required"
 
 
+class EmbeddingMismatchError(IndexingPolicyError):
+    """The selected embedding does not match the published vector space."""
+
+    code = "lightrag_embedding_incompatible"
+
+
 def _endpoint_identity(value: str | None) -> str:
     if not value:
         return ""
@@ -224,10 +230,17 @@ def resolve_write_snapshot(
     base_dir: str,
     kb_name: str,
     explicit: IndexingLLMSnapshot | None = None,
+    published_root: Path | None = None,
 ) -> IndexingLLMSnapshot:
     if explicit is not None:
         return explicit
-    policy = effective_policy(kb_dir, base_dir=base_dir, kb_name=kb_name)
+    from .storage import read_published_policy
+
+    policy = (
+        read_published_policy(published_root)
+        if published_root is not None
+        else effective_policy(kb_dir, base_dir=base_dir, kb_name=kb_name)
+    )
     if policy is None:
         return freeze_default_snapshot()
     if policy.get("policy") == POLICY_LEGACY:

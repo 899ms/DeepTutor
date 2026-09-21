@@ -41,6 +41,7 @@ import IndexingModelSelector, {
   selectionFromLLMOption,
 } from "./IndexingModelSelector";
 import LightRagIndexingProvenance from "./LightRagIndexingProvenance";
+import LightRagEmbeddingWarning from "./LightRagEmbeddingWarning";
 
 export function selectionForLightRagModelDialog(
   options: LLMOption[],
@@ -120,7 +121,11 @@ export default function KbIndexVersionsSection({
 
   const publishedLightRagVersion = isLightRag
     ? versions.find(
-        (version) => version.provider === "lightrag" && version.ready,
+        (version) =>
+          version.provider === "lightrag" &&
+          version.ready &&
+          (!kb.metadata?.embedding_selection ||
+            version.version === kb.metadata.indexed_version),
       )
     : undefined;
   const buildingLightRagVersion = isLightRag
@@ -305,6 +310,7 @@ export default function KbIndexVersionsSection({
       </div>
 
       {isError && <KbIndexFailureBanner kb={kb} />}
+      <LightRagEmbeddingWarning kb={kb} />
       {kb.metadata?.embedding_status === "missing" && (
         <p
           role="alert"
