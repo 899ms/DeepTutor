@@ -354,34 +354,6 @@ async def test_bwrap_health_treats_loopback_denial_as_unhealthy(
 
 
 @pytest.mark.asyncio
-async def test_bwrap_retries_with_shared_net_after_loopback_denial() -> None:
-    """Ubuntu 24.04 can deny loopback setup; keep mount isolation via --share-net."""
-    backend = BwrapBackend()
-    calls: list[list[str]] = []
-
-    async def fake_run(argv: list[str], _request: ExecRequest) -> ExecResult:
-        calls.append(list(argv))
-        if "--share-net" not in argv:
-            return ExecResult(stderr=_LOOPBACK_STDERR, exit_code=1)
-        return ExecResult(stdout="ok\n", exit_code=0)
-
-    backend._run_bwrap = fake_run  # type: ignore[method-assign]
-
-    result = await backend.exec(ExecRequest(command="true"))
-
-    assert result.exit_code == 0
-    assert result.stdout.strip() == "ok"
-    assert len(calls) == 2
-    assert "--unshare-all" in calls[0] and "--share-net" not in calls[0]
-    assert "--share-net" in calls[1]
-    # Later execs must not pay the failed loopback spawn again.
-    second = await backend.exec(ExecRequest(command="true"))
-    assert second.exit_code == 0
-    assert len(calls) == 3
-    assert "--share-net" in calls[2]
-
-
-@pytest.mark.asyncio
 async def test_service_falls_back_to_subprocess_when_bwrap_unhealthy() -> None:
     """``sandbox_allow_subprocess`` must recover partner/file exec when bwrap cannot run."""
     svc = SandboxService(SandboxSettings(allow_subprocess=True))

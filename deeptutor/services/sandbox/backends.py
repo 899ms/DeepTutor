@@ -19,7 +19,6 @@ from __future__ import annotations
 import asyncio
 from contextlib import suppress
 import locale
-import logging
 import os
 from pathlib import Path
 import shutil
@@ -33,8 +32,6 @@ from deeptutor.services.sandbox.spec import (
     ExecResult,
     IsolationLevel,
 )
-
-logger = logging.getLogger(__name__)
 
 
 class SandboxBackend:
@@ -139,21 +136,6 @@ class RunnerSidecarBackend(SandboxBackend):
             return False, f"runner unreachable: {type(exc).__name__}"
 
 
-_LOOPBACK_DENIED_MARKER = "bwrap: loopback: Failed RTM_NEWADDR"
-
-
-def _is_bwrap_loopback_denied(result: ExecResult) -> bool:
-    """Return True when bubblewrap aborted while configuring sandbox loopback.
-
-    Ubuntu 24.04+ can deny ``RTM_NEWADDR`` inside an unprivileged netns
-    (``kernel.apparmor_restrict_unprivileged_userns``). That failure is
-    specific to loopback setup, not to the inner command.
-    """
-    if result.error or result.timed_out or result.exit_code == 0:
-        return False
-    return _LOOPBACK_DENIED_MARKER in (result.stderr or "")
-
-
 class BwrapBackend(SandboxBackend):
     """Bubblewrap mount-namespace isolation (Linux only)."""
 
@@ -170,7 +152,6 @@ class BwrapBackend(SandboxBackend):
         inherit_virtualenv: bool = True,
     ) -> None:
         self._bwrap = bwrap_path
-        self._share_net = False
         detected_prefix, uses_external_runtime = _active_python_prefix(inherit=inherit_virtualenv)
         if venv_path is not None:
             candidate = Path(venv_path).resolve()
@@ -218,9 +199,6 @@ class BwrapBackend(SandboxBackend):
             self._bwrap,
             "--die-with-parent",
             "--unshare-all",
-            # Keep mount/PID isolation when the kernel denies loopback setup
-            # inside a new netns (Ubuntu 24.04+ AppArmor userns restrictions).
-            *(("--share-net",) if self._share_net else ()),
             "--new-session",
             "--proc",
             "/proc",
@@ -269,7 +247,8 @@ class BwrapBackend(SandboxBackend):
             argv += ["/bin/sh", "-c", request.command]
         return argv
 
-    async def _run_bwrap(self, argv: list[str], request: ExecRequest) -> ExecResult:
+    async def exec(self, request: ExecRequest) -> ExecResult:
+        argv = self._build_argv(request)
         try:
             process = await asyncio.create_subprocess_exec(
                 *argv,
@@ -284,17 +263,6 @@ class BwrapBackend(SandboxBackend):
             request.limits.timeout_s,
             request.limits.max_output_chars,
         )
-
-    async def exec(self, request: ExecRequest) -> ExecResult:
-        result = await self._run_bwrap(self._build_argv(request), request)
-        if not self._share_net and _is_bwrap_loopback_denied(result):
-            logger.warning(
-                "bwrap loopback setup denied (%s); retrying with --share-net",
-                (result.stderr or "").strip() or f"exit {result.exit_code}",
-            )
-            self._share_net = True
-            result = await self._run_bwrap(self._build_argv(request), request)
-        return result
 
     async def health(self) -> tuple[bool, str]:
         if shutil.which(self._bwrap) is None:
