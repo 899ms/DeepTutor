@@ -11,6 +11,32 @@ const config = [
     rules: {
       // During migration keep as warning; change to "error" once phase2/3 complete.
       "i18n/no-literal-ui-text": "warn",
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/components/common/Tooltip",
+              message: "Import the canonical @/shared/ui/Tooltip primitive.",
+            },
+            {
+              name: "@/components/ui/Tooltip",
+              message: "Import the canonical @/shared/ui/Tooltip primitive.",
+            },
+          ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "warn",
+        {
+          selector: "JSXAttribute[name.name='role'][value.value='tooltip']",
+          message: "Use @/shared/ui/Tooltip instead of a local tooltip implementation.",
+        },
+        {
+          selector: "FunctionDeclaration[id.name=/Icon(Button|Btn)$/] JSXOpeningElement[name.type='JSXIdentifier'][name.name=/^[a-z]/] > JSXAttribute[name.name='title']",
+          message: "Icon button hints must use @/shared/ui/Tooltip so they work on keyboard and touch.",
+        },
+      ],
     },
   },
   {
