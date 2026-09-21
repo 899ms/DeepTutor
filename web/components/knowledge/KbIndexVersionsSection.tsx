@@ -86,7 +86,11 @@ export default function KbIndexVersionsSection({
 
   const publishedLightRagVersion = isLightRag
     ? versions.find(
-        (version) => version.provider === "lightrag" && version.ready,
+        (version) =>
+          version.provider === "lightrag" &&
+          version.ready &&
+          (!kb.metadata?.embedding_selection ||
+            version.version === kb.metadata.indexed_version),
       )
     : undefined;
   const buildingLightRagVersion = isLightRag

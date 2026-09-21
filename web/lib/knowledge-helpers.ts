@@ -174,6 +174,7 @@ export interface KnowledgeBase {
     embedding_selection?: { profile_id: string; model_id: string };
     embedding_status?: "ready" | "missing" | "changed" | "unconfigured" | "legacy";
     embedding_dim?: number;
+    indexed_version?: string;
     embedding_mismatch?: boolean;
     /** Connected-source kind (e.g. "obsidian", "subagent"); absent for ordinary indexed KBs. */
     type?: string;
