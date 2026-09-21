@@ -232,6 +232,19 @@ def latest_published_root(kb_dir: Path) -> Path | None:
     return None
 
 
+def published_root_for_embedding(kb_dir: Path, signature: str | None) -> Path | None:
+    """Find provenance for the recorded binding, even after catalog identity drift."""
+    if signature is None:
+        return latest_published_root(kb_dir)
+    from deeptutor.services.rag.index_versioning import list_kb_versions
+
+    for entry in list_kb_versions(kb_dir):
+        root = Path(entry["storage_path"])
+        if entry.get("embedding_signature") == signature and meta_is_native_published(root):
+            return root
+    return None
+
+
 def write_meta(
     root_dir: Path,
     *,

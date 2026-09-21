@@ -434,23 +434,12 @@ def revalidate_snapshot(snapshot: IndexingPolicySnapshot) -> IndexingPolicySnaps
 def _bound_published_root(kb_dir: Path) -> Path | None:
     """Use the published version selected by the KB's existing embedding binding."""
     from deeptutor.services.config.knowledge_base_config import KnowledgeBaseConfigService
-    from deeptutor.services.embedding.config import embedding_config_scope
-    from deeptutor.services.rag.embedding_binding import binding_status, bound_graph_storage_root
 
-    from .storage import latest_published_root
+    from .storage import published_root_for_embedding
 
-    latest = latest_published_root(kb_dir)
     entry = KnowledgeBaseConfigService(kb_dir.parent / "kb_config.json").get_kb_config(kb_dir.name)
-    _, config = binding_status(entry)
-    if config is not None:
-        with embedding_config_scope(config):
-            try:
-                return bound_graph_storage_root(kb_dir, "lightrag", latest)
-            except ValueError:
-                # A rebuild must still be able to replace an incompatible index.
-                # Query/append binding checks independently reject this identity.
-                pass
-    return latest
+    signature = entry.get("embedding_signature") if entry.get("embedding_selection") else None
+    return published_root_for_embedding(kb_dir, signature)
 
 
 def _target_policy_key(kb_dir: Path) -> str | None:

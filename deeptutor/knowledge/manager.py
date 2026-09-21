@@ -1407,11 +1407,16 @@ class KnowledgeBaseManager:
 
         if rag_provider == LIGHTRAG_PROVIDER:
             from deeptutor.services.rag.pipelines.lightrag.storage import (
-                latest_published_root,
+                published_root_for_embedding,
                 read_published_policy,
             )
 
-            published_root = latest_published_root(kb_dir) if dir_exists else None
+            signature = (
+                kb_config.get("embedding_signature")
+                if kb_config.get("embedding_selection")
+                else None
+            )
+            published_root = published_root_for_embedding(kb_dir, signature) if dir_exists else None
             indexing_policy = read_published_policy(published_root)
             if indexing_policy is None:
                 pending = kb_config.get("pending_indexing_policy")

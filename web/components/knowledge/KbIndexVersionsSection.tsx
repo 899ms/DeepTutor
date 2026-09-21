@@ -69,6 +69,10 @@ export default function KbIndexVersionsSection({
   const pageIndexProvider = !providerUsesEmbeddingMetadata(provider);
   const modelInsensitiveProvider = pageIndexProvider || isLightRag;
   const versions = kb.statistics?.index_versions ?? [];
+  const isEmptyEmbeddingKb =
+    needsEmbedding &&
+    kb.statistics?.raw_documents === 0 &&
+    !versions.some((version) => version.ready);
   const activeSig = modelInsensitiveProvider
     ? null
     : (kb.statistics?.active_signature ?? null);
@@ -235,7 +239,9 @@ export default function KbIndexVersionsSection({
                 : t("Re-indexing…")
               : isError
                 ? t("Retry indexing")
-                : t("Re-index")}
+                : isEmptyEmbeddingKb
+                  ? t("Change model")
+                  : t("Re-index")}
           </button>
         )}
       </div>
@@ -372,7 +378,13 @@ export default function KbIndexVersionsSection({
               className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] disabled:opacity-50"
             >
               {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
-              {t("Confirm rebuild")}
+              {t(
+                isEmptyEmbeddingKb
+                  ? "Save model"
+                  : isLightRag
+                    ? "Confirm rebuild"
+                    : "Start full re-index",
+              )}
             </button>
           </div>
         }

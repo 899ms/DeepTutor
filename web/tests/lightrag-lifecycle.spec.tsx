@@ -190,13 +190,26 @@ it("refreshes confirmation when the selected embedding changes", async () => {
   const dialog = screen.getByRole("dialog");
   await within(dialog).findByText("embedding-current · 3d");
   fixture.preview.mockResolvedValue(preview("selected-b", "embedding-b"));
-  fireEvent.change(within(dialog).getByRole("combobox", { name: "Embedding model" }), {
-    target: { value: JSON.stringify(["embedding", "b"]) },
-  });
+  fireEvent.change(
+    within(dialog).getByRole("combobox", { name: "Embedding model" }),
+    {
+      target: { value: JSON.stringify(["embedding", "b"]) },
+    },
+  );
   await within(dialog).findByText("embedding-b · 3d");
-  expect(fixture.preview).toHaveBeenLastCalledWith("papers", { profile_id: "embedding", model_id: "b" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm rebuild" }));
-  await waitFor(() => expect(submit).toHaveBeenCalledWith("selected-b", { profile_id: "embedding", model_id: "b" }));
+  expect(fixture.preview).toHaveBeenLastCalledWith("papers", {
+    profile_id: "embedding",
+    model_id: "b",
+  });
+  fireEvent.click(
+    within(dialog).getByRole("button", { name: "Confirm rebuild" }),
+  );
+  await waitFor(() =>
+    expect(submit).toHaveBeenCalledWith("selected-b", {
+      profile_id: "embedding",
+      model_id: "b",
+    }),
+  );
 });
 
 it("retains upstream embedding action but no role overrides for an empty knowledge base", () => {
@@ -213,7 +226,9 @@ it("retains upstream embedding action but no role overrides for an empty knowled
       onReindex={vi.fn()}
     />,
   );
-  expect(screen.getByRole("button", { name: "Re-index" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Change model" }),
+  ).toBeInTheDocument();
   expect(screen.queryByText("Index configuration")).not.toBeInTheDocument();
 });
 

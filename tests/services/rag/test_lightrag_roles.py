@@ -1046,6 +1046,20 @@ def test_append_policy_and_target_follow_older_bound_version(
         workspace.mkdir()
         (workspace / "kv_store_doc_status.json").write_text('{"doc":{"status":"processed"}}')
     second_before = (second / "meta.json").read_bytes()
+    (tmp_path / "kb_config.json").write_text(
+        json.dumps(
+            {
+                "knowledge_bases": {
+                    "kb": {
+                        "rag_provider": "lightrag",
+                        **embedding_binding.binding_fields(
+                            {"profile_id": "embedding", "model_id": "a"}, original
+                        ),
+                    }
+                }
+            }
+        )
+    )
     monkeypatch.setattr(embedding_binding, "binding_status", lambda _entry: ("ready", original))
     accepted = policy.bind_target(
         policy.resolve_write_snapshot(kb, base_dir=str(tmp_path), kb_name="kb"), kb
