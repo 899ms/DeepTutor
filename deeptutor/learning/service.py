@@ -1608,7 +1608,7 @@ class LearningService:
                 raise MasteryInteractionError(
                     f"Objective {kp.name!r} must be graded with mastery_quiz + mastery_grade"
                 )
-            self.record_qualitative_in_memory(
+            applied = self.record_qualitative_in_memory(
                 tx.progress,
                 kp_id,
                 passed=passed,
@@ -1617,6 +1617,8 @@ class LearningService:
                 session_id=session_id,
                 turn_id=turn_id,
             )
+            if not applied:
+                return
             tx.touch()
             tx.emit(
                 "mastery.assessed",
@@ -1655,7 +1657,15 @@ class LearningService:
         scheduler: SpacedRepetitionScheduler | None = None,
         session_id: str = "",
         turn_id: str = "",
-    ) -> None:
+    ) -> bool:
+        evidence_id = ""
+        if session_id or turn_id:
+            evidence_id = uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"deeptutor:qualitative:{session_id}:{turn_id}:{kp_id}",
+            ).hex
+            if any(item.evidence_id == evidence_id for item in progress.learning_evidence):
+                return False
         progress.qualitative_mastery[kp_id] = bool(passed)
         progress.deferred_objectives.pop(kp_id, None)
         current = progress.mastery_levels.get(kp_id, 0.0)
@@ -1664,6 +1674,7 @@ class LearningService:
             progress.feynman_explanations[kp_id] = evidence
         moment = time.time()
         review_evidence = LearningEvidence(
+            evidence_id=evidence_id,
             knowledge_point_id=kp_id,
             timestamp=moment,
             assessment_type="qualitative",
@@ -1688,6 +1699,7 @@ class LearningService:
             )
             progress.review_queue = scheduler.build_review_queue(progress)
         progress.updated_at = moment
+        return True
 
     def list_path_overviews(self) -> list[dict]:
         """Gate-accurate one-line state for every path the learner owns.

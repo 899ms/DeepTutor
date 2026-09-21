@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import Callable, Iterable
+import logging
 from typing import Any
 
 from deeptutor.services.config.runtime_settings import get_chat_attachment_limits
