@@ -259,8 +259,26 @@ class TestRegenerateLastTurn:
                 "base64": "",
                 "filename": "a.pdf",
                 "mime_type": "application/pdf",
+                "id": "att-1",
             }
         ]
+
+    def test_validation_failure_preserves_existing_assistant_message(
+        self, store: SQLiteSessionStore
+    ) -> None:
+        sid, user_id, assistant_id = _seed_session(store)
+        runtime = TurnRuntimeManager(store=store)
+
+        with pytest.raises(ValueError):
+            asyncio.run(
+                runtime.regenerate_last_turn(
+                    sid,
+                    overrides={"llm_selection": {"profile_id": "missing-model"}},
+                )
+            )
+
+        remaining = asyncio.run(store.get_messages(sid))
+        assert [message["id"] for message in remaining] == [user_id, assistant_id]
 
     def test_replays_book_references_from_request_snapshot(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(

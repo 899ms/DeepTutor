@@ -10,7 +10,9 @@ from deeptutor.services.storage.attachment_store import LocalDiskAttachmentStore
 
 
 @pytest.mark.asyncio
-async def test_chat_pdf_always_uses_configured_parser(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+async def test_chat_pdf_always_uses_configured_parser(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     store = LocalDiskAttachmentStore(root=tmp_path / "attachments")
     await store.put(session_id="session", attachment_id="pdf", filename="notes.pdf", data=b"pdf")
 
@@ -23,7 +25,14 @@ async def test_chat_pdf_always_uses_configured_parser(monkeypatch: pytest.Monkey
         "deeptutor.services.session.attachment_parsing.get_parse_service", lambda: Parser()
     )
     records, contexts = await parse_chat_pdf_attachments(
-        [{"id": "pdf", "filename": "notes.pdf", "extracted_text": "native text", "extracted_chars": 11}],
+        [
+            {
+                "id": "pdf",
+                "filename": "notes.pdf",
+                "extracted_text": "native text",
+                "extracted_chars": 11,
+            }
+        ],
         attachment_store=store,
         session_id="session",
         document_texts=["[File: notes.pdf]\nnative text"],

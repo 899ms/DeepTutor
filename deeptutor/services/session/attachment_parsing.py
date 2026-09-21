@@ -55,9 +55,9 @@ async def parse_chat_pdf_attachments(
                 parsed = await asyncio.to_thread(
                     get_parse_service().parse,
                     path,
-                    on_output=lambda message: on_progress(attachment_id, "parsing", message)
-                    if on_progress
-                    else None,
+                    on_output=lambda message: (
+                        on_progress(attachment_id, "parsing", message) if on_progress else None
+                    ),
                 )
                 text = str(parsed.markdown or "").strip()
                 if not text:
@@ -87,9 +87,7 @@ async def parse_chat_pdf_attachments(
     return updated, contexts
 
 
-def _replace_context(
-    contexts: list[str], filename: str, text: str, error: str
-) -> None:
+def _replace_context(contexts: list[str], filename: str, text: str, error: str) -> None:
     replacement = (
         f"[File: {filename}]\n{text}"
         if not error
