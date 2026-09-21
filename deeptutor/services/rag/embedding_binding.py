@@ -301,9 +301,30 @@ def with_kb_embedding(method):
             }
         from deeptutor.services.embedding.config import embedding_config_scope
 
+        locked_publication = entry["rag_provider"] == "lightrag" and method.__name__ != "search"
+        if locked_publication:
+            expected_binding = (entry.get("embedding_selection"), entry.get("embedding_signature"))
+
+            def validate_binding():
+                current = service.get_kb_config(kb_name)
+                if (
+                    current.get("embedding_selection"),
+                    current.get("embedding_signature"),
+                ) != expected_binding:
+                    raise ValueError(
+                        "The knowledge-base embedding binding changed before indexing started; resubmit the operation."
+                    )
+
+            def publish_binding():
+                persist_binding(self.kb_base_dir, kb_name, selection, config)
+
+            # LightRAG invokes both callbacks under its existing write ownership.
+            kwargs["validate_embedding_binding"] = validate_binding
+            kwargs["publish_embedding_binding"] = publish_binding
+
         with embedding_config_scope(config):
             result = await method(self, *args, **kwargs)
-            if result and method.__name__ != "search" and selection:
+            if result and method.__name__ != "search" and selection and not locked_publication:
                 persist_binding(self.kb_base_dir, kb_name, selection, config)
             return result
 

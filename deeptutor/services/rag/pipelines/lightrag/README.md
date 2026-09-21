@@ -35,12 +35,14 @@ even when LightRAG requests its COT output format.
 
 ## Creating, appending and rebuilding
 
-Configure models in Settings. Creation and full rebuild do not offer per-index
-model overrides. An idle, unpublished empty knowledge base follows current valid
-defaults until its first accepted indexing task freezes the configuration.
+Configure role models in Settings. Creation and full rebuild do not offer per-index
+role overrides, but retain per-knowledge-base embedding selection. An idle,
+unpublished empty knowledge base follows current valid role defaults until its
+first accepted indexing task freezes the configuration, retaining its embedding binding.
 
-Before rebuilding, review the current default embedding model/dimension and
-EXTRACT/VLM models and reasoning. If defaults change before submission, review
+Before rebuilding, review the selected embedding model/dimension and current default
+EXTRACT/VLM models and reasoning. The existing embedding binding is retained unless
+another model is selected. If the selected configuration changes before submission, review
 and confirm the refreshed configuration. Accepted tasks retain the same embedding
 and role settings through execution and version publication. Failed-task retry
 actions also use this confirmation flow.

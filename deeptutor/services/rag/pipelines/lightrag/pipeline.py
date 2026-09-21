@@ -373,6 +373,9 @@ class LightRagPipeline:
 
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         with write_ownership(kb_dir):
+            if validate_binding := kwargs.pop("validate_embedding_binding", None):
+                validate_binding()
+            publish_binding = kwargs.pop("publish_embedding_binding", None)
             snapshot = kwargs.get("indexing_snapshot") or kwargs.get("accepted_indexing_snapshot")
             if snapshot is not None:
                 indexing_policy.validate_target(snapshot, kb_dir)
@@ -383,7 +386,10 @@ class LightRagPipeline:
                     else "accepted_indexing_snapshot"
                 )
                 kwargs[key] = fresh
-            return await self._initialize_owned(kb_name, file_paths, **kwargs)
+            result = await self._initialize_owned(kb_name, file_paths, **kwargs)
+            if result and publish_binding is not None:
+                publish_binding()
+            return result
 
     async def _initialize_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
@@ -426,6 +432,9 @@ class LightRagPipeline:
 
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         with write_ownership(kb_dir):
+            if validate_binding := kwargs.pop("validate_embedding_binding", None):
+                validate_binding()
+            publish_binding = kwargs.pop("publish_embedding_binding", None)
             if kwargs.get("indexing_snapshot") is not None and (
                 storage.latest_published_root(kb_dir) is not None or list_kb_versions(kb_dir)
             ):
@@ -443,7 +452,10 @@ class LightRagPipeline:
                     else "accepted_indexing_snapshot"
                 )
                 kwargs[key] = fresh
-            return await self._add_documents_owned(kb_name, file_paths, **kwargs)
+            result = await self._add_documents_owned(kb_name, file_paths, **kwargs)
+            if result and publish_binding is not None:
+                publish_binding()
+            return result
 
     async def _add_documents_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
