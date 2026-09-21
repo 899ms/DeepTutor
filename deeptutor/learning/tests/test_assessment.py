@@ -170,6 +170,38 @@ def test_repeated_record_is_idempotent(store: SQLiteSessionStore) -> None:
     assert len(attempts) == 1
 
 
+def test_document_assessment_persists_without_a_chat_session(
+    store: SQLiteSessionStore,
+) -> None:
+    record = AssessmentRecord(
+        origin_type="document_analysis",
+        origin_ref="book:calculus:focus-check-3",
+        question_id="q-3",
+        question="Differentiate x².",
+        user_answer="2x",
+        result="correct",
+        source="book",
+        material_id="calculus",
+    )
+
+    first = asyncio.run(record_assessment(record))
+    second = asyncio.run(record_assessment(record))
+
+    assert first.entry_id == second.entry_id
+    assert first.attempt_recorded is True
+    assert second.attempt_recorded is False
+    entry = asyncio.run(
+        store.find_notebook_entry_by_origin(
+            "document_analysis",
+            "book:calculus:focus-check-3",
+            "q-3",
+        )
+    )
+    assert entry is not None
+    assert entry["session_id"] == ""
+    assert entry["origin_type"] == "document_analysis"
+
+
 def test_reanswer_keeps_immutable_attempts_and_updates_latest_projection(
     store: SQLiteSessionStore,
 ) -> None:

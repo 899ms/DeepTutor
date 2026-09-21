@@ -1,11 +1,12 @@
 """Unified assessment adapter for the Question Notebook review layer.
 
 Mastery Path, Book Focus-Check, and Immersive Reading persist graded attempts
-through :func:`record_assessment`. Identity is the existing
-``(session_id, turn_id, question_id)`` remains the latest-state notebook
-projection. Every graded submission is also appended to the immutable shared
-attempt log, and explicit objective linkage can update the same retention
-state from any learning surface.
+through :func:`record_assessment`. Identity is
+``(origin_type, origin_ref, turn_id, question_id)``; conversation-backed
+records use their session id as ``origin_ref`` for backward compatibility.
+Every graded submission is also appended to the immutable shared attempt log,
+and explicit objective linkage can update the same retention state from any
+learning surface.
 """
 
 from __future__ import annotations
@@ -22,9 +23,11 @@ from deeptutor.core.assessment import (
     ASSESSMENT_RESULTS,
     ASSESSMENT_SOURCES,
     ASSESSMENT_TYPES,
+    QUESTION_ORIGIN_TYPES,
     AssessmentResult,
     AssessmentSource,
     AssessmentType,
+    QuestionOriginType,
 )
 
 logger = logging.getLogger(__name__)
@@ -75,7 +78,9 @@ class AssessmentRecord(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    session_id: str
+    session_id: str = ""
+    origin_type: QuestionOriginType = "conversation"
+    origin_ref: str = ""
     turn_id: str = ""
     question_id: str
     source: AssessmentSource = "deep_question"
@@ -112,6 +117,12 @@ class AssessmentRecord(BaseModel):
         raw = str(value or "").strip()
         return raw if raw in ASSESSMENT_SOURCES else "deep_question"
 
+    @field_validator("origin_type", mode="before")
+    @classmethod
+    def _normalize_origin_type(cls, value: object) -> str:
+        raw = str(value or "").strip()
+        return raw if raw in QUESTION_ORIGIN_TYPES else "conversation"
+
     @field_validator("assessment_type", mode="before")
     @classmethod
     def _normalize_type(cls, value: object) -> str:
@@ -126,6 +137,7 @@ class AssessmentRecord(BaseModel):
 
     @field_validator(
         "session_id",
+        "origin_ref",
         "turn_id",
         "question_id",
         "question",
@@ -172,8 +184,16 @@ class AssessmentRecord(BaseModel):
 
     @model_validator(mode="after")
     def _require_identity(self) -> "AssessmentRecord":
-        if not self.session_id or not self.question_id:
-            raise ValueError("session_id and question_id are required")
+        if self.origin_type == "conversation":
+            if not self.session_id:
+                raise ValueError("conversation assessments require session_id")
+            if self.origin_ref and self.origin_ref != self.session_id:
+                raise ValueError("conversation origin_ref must match session_id")
+            self.origin_ref = self.session_id
+        elif not self.origin_ref:
+            raise ValueError(f"{self.origin_type} assessments require origin_ref")
+        if not self.question_id:
+            raise ValueError("question_id is required")
         if not self.question:
             raise ValueError("question is required")
         return self
@@ -181,7 +201,12 @@ class AssessmentRecord(BaseModel):
     @property
     def assessment_id(self) -> str:
         """Audit id derived from the notebook unique key — not a second identity."""
-        raw = f"{self.session_id}|{self.turn_id}|{self.question_id}"
+        owner = (
+            self.session_id
+            if self.origin_type == "conversation"
+            else f"{self.origin_type}:{self.origin_ref}"
+        )
+        raw = f"{owner}|{self.turn_id}|{self.question_id}"
         return sha1(raw.encode("utf-8"), usedforsecurity=False).hexdigest()
 
     @property
@@ -195,9 +220,14 @@ class AssessmentRecord(BaseModel):
         """
         if self.attempt_id:
             return self.attempt_id
+        owner = (
+            self.session_id
+            if self.origin_type == "conversation"
+            else f"{self.origin_type}:{self.origin_ref}"
+        )
         raw = "|".join(
             (
-                self.session_id,
+                owner,
                 self.turn_id,
                 self.question_id,
                 self.source,
@@ -331,6 +361,8 @@ def to_notebook_item(record: AssessmentRecord, diagnostics: list[str]) -> dict[s
     mastery_path_id, knowledge_point_id = _apply_linkage(record, diagnostics)
     is_correct = result_to_is_correct(result)
     item: dict[str, Any] = {
+        "origin_type": record.origin_type,
+        "origin_ref": record.origin_ref,
         "turn_id": record.turn_id,
         "question_id": record.question_id,
         "question": record.question,
@@ -368,15 +400,18 @@ async def record_assessment(record: AssessmentRecord) -> AssessmentOutcome:
         from deeptutor.services.session import get_sqlite_session_store
 
         store = get_sqlite_session_store()
-        upserted = await store.upsert_notebook_entries(record.session_id, [item])
-        entry = await store.find_notebook_entry(
-            record.session_id, record.question_id, turn_id=record.turn_id
+        upserted = await store.upsert_notebook_entries(record.session_id or None, [item])
+        entry = await store.find_notebook_entry_by_origin(
+            record.origin_type,
+            record.origin_ref,
+            record.question_id,
+            turn_id=record.turn_id,
         )
         entry_id = (
             int(entry["id"]) if isinstance(entry, dict) and entry.get("id") is not None else None
         )
         attempt_recorded = await store.append_assessment_attempt(
-            record.session_id,
+            record.session_id or None,
             entry_id,
             {
                 **record.model_dump(mode="json"),
@@ -433,6 +468,7 @@ __all__ = [
     "AssessmentResult",
     "AssessmentSource",
     "AssessmentType",
+    "QuestionOriginType",
     "RecordAssessmentError",
     "build_grade_result",
     "is_correct_to_result",
