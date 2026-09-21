@@ -1449,11 +1449,18 @@ class KnowledgeBaseManager:
 
         if rag_provider == LIGHTRAG_PROVIDER:
             from deeptutor.services.rag.pipelines.lightrag.storage import (
-                latest_published_root,
+                published_root_for_embedding,
                 read_published_policy,
             )
 
-            published_root = latest_published_root(kb_dir) if dir_exists else None
+            binding_signature = (
+                kb_config.get("embedding_signature")
+                if kb_config.get("embedding_selection")
+                else None
+            )
+            published_root = (
+                published_root_for_embedding(kb_dir, binding_signature) if dir_exists else None
+            )
             indexing_policy = read_published_policy(published_root)
             if indexing_policy is None:
                 pending = kb_config.get("pending_indexing_policy")
@@ -1461,15 +1468,23 @@ class KnowledgeBaseManager:
                     pending if isinstance(pending, dict) else {"policy": "legacy_unpinned"}
                 )
             metadata["indexing_policy"] = indexing_policy
-            if published_root is not None:
+            if published_root is not None or kb_config.get("embedding_selection"):
                 from deeptutor.services.rag.embedding_binding import entry_signature
 
                 published = next(
-                    (v for v in index_versions if v.get("version") == published_root.name),
+                    (
+                        v
+                        for v in index_versions
+                        if published_root is not None and v.get("version") == published_root.name
+                    ),
                     {},
                 )
-                metadata["indexed_embedding_model"] = published.get("embedding_model")
-                metadata["indexed_embedding_dim"] = published.get("embedding_dim")
+                metadata["indexed_embedding_model"] = published.get(
+                    "embedding_model"
+                ) or kb_config.get("embedding_model")
+                metadata["indexed_embedding_dim"] = published.get("embedding_dim") or kb_config.get(
+                    "embedding_dim"
+                )
                 current_embedding = entry_signature(kb_config)
                 if current_embedding is not None:
                     metadata["current_embedding_model"] = current_embedding.model

@@ -449,6 +449,7 @@ class LightRagPipeline:
             base_dir=self.kb_base_dir,
             kb_name=kb_name,
             explicit=explicit,
+            published_root=existing,
         )
         if existing is not None:
             root_dir = existing
