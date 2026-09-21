@@ -61,9 +61,7 @@ def _unique_fingerprint_map(
         fingerprint = _objective_fingerprint(kp)
         counts[fingerprint] = counts.get(fingerprint, 0) + 1
     return {
-        _objective_fingerprint(kp): kp
-        for kp in points
-        if counts[_objective_fingerprint(kp)] == 1
+        _objective_fingerprint(kp): kp for kp in points if counts[_objective_fingerprint(kp)] == 1
     }
 
 
@@ -128,9 +126,9 @@ def _drop_quiz_evidence_for_attempts(
         kept.append(event)
     leftover_by_kp: dict[str, int] = {}
     for attempt in unmatched:
-        leftover_by_kp[attempt.knowledge_point_id] = leftover_by_kp.get(
-            attempt.knowledge_point_id, 0
-        ) + 1
+        leftover_by_kp[attempt.knowledge_point_id] = (
+            leftover_by_kp.get(attempt.knowledge_point_id, 0) + 1
+        )
     if leftover_by_kp:
         rebuilt: list[LearningEvidence] = []
         for event in reversed(kept):
@@ -1271,9 +1269,7 @@ class LearningService:
             if attempt.knowledge_point_id == kp_id and not attempt.voided
         ]
         events = [
-            event
-            for event in progress.learning_evidence
-            if event.knowledge_point_id == kp_id
+            event for event in progress.learning_evidence if event.knowledge_point_id == kp_id
         ]
         if kp_type is None or (not attempts and not events):
             progress.repetition_states.pop(kp_id, None)
@@ -1362,25 +1358,18 @@ class LearningService:
                 for attempt in tx.progress.quiz_attempts
                 if attempt.question_id == resolved_id
             ]
-            question = (
-                interaction.question
-                if interaction is not None
-                else pending
+            question = interaction.question if interaction is not None else pending
+            kp_id = (question.knowledge_point_id if question is not None else "") or (
+                attempts[0].knowledge_point_id if attempts else ""
             )
-            kp_id = (
-                (question.knowledge_point_id if question is not None else "")
-                or (attempts[0].knowledge_point_id if attempts else "")
-            )
-            module_id = (
-                (question.module_id if question is not None else "")
-                or (attempts[0].module_id if attempts else "")
+            module_id = (question.module_id if question is not None else "") or (
+                attempts[0].module_id if attempts else ""
             )
             question_type = question.question_type if question is not None else "short"
             previous_expected = question.expected_answer if question is not None else ""
             previous_is_correct = attempts[0].is_correct if attempts else None
-            user_answer = (
-                (interaction.user_answer if interaction is not None else "")
-                or (str(attempts[0].user_answer or "") if attempts else "")
+            user_answer = (interaction.user_answer if interaction is not None else "") or (
+                str(attempts[0].user_answer or "") if attempts else ""
             )
 
             repaired_correct: bool | None = previous_is_correct
@@ -1429,8 +1418,8 @@ class LearningService:
                             question_type,
                         )
                         attempt.is_correct = is_correct
-                        attempt.error_type = None if is_correct else classify_error(
-                            str(attempt.user_answer or "")
+                        attempt.error_type = (
+                            None if is_correct else classify_error(str(attempt.user_answer or ""))
                         )
                         repaired_correct = is_correct
                         if is_correct:
@@ -1447,9 +1436,8 @@ class LearningService:
                                     question_id=resolved_id,
                                     knowledge_point_id=kp_id,
                                     module_id=module_id,
-                                    error_type=attempt.error_type or classify_error(
-                                        str(attempt.user_answer or "")
-                                    ),
+                                    error_type=attempt.error_type
+                                    or classify_error(str(attempt.user_answer or "")),
                                     status="active",
                                 )
                             )

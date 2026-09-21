@@ -59,7 +59,9 @@ def path_id(tmp_path, monkeypatch):
     return "test_path"
 
 
-def _kp(kp_id: str, name: str, module_id: str = "m1", kp_type: KnowledgeType = KnowledgeType.MEMORY):
+def _kp(
+    kp_id: str, name: str, module_id: str = "m1", kp_type: KnowledgeType = KnowledgeType.MEMORY
+):
     return KnowledgePoint(id=kp_id, name=name, type=kp_type, module_id=module_id)
 
 
@@ -149,7 +151,9 @@ async def test_replace_unrelated_objective_does_not_inherit_positional_state(pat
     old_id = first["map"]["modules"][0]["knowledge_points"][0]["id"]
     store = LearningStore()
     service = LearningService(store)
-    store.mutate(path_id, lambda tx: _seed_objective_evidence(tx, old_id, first["map"]["modules"][0]["id"]))
+    store.mutate(
+        path_id, lambda tx: _seed_objective_evidence(tx, old_id, first["map"]["modules"][0]["id"])
+    )
 
     rebuilt = await _build(
         path_id,
@@ -202,11 +206,15 @@ async def test_replace_reorder_keeps_evidence_with_the_objective(path_id):
     store = LearningStore()
     store.mutate(
         path_id,
-        lambda tx: _seed_objective_evidence(tx, first_id, built["map"]["modules"][0]["id"], mastery=0.8),
+        lambda tx: _seed_objective_evidence(
+            tx, first_id, built["map"]["modules"][0]["id"], mastery=0.8
+        ),
     )
     store.mutate(
         path_id,
-        lambda tx: _seed_objective_evidence(tx, second_id, built["map"]["modules"][0]["id"], mastery=0.4),
+        lambda tx: _seed_objective_evidence(
+            tx, second_id, built["map"]["modules"][0]["id"], mastery=0.4
+        ),
     )
 
     rebuilt = await _build(
@@ -241,7 +249,9 @@ def test_deleting_pending_objective_abandons_question_and_interaction(tmp_path):
     service = LearningService(store)
     first = _kp("kp1", "Keep me")
     doomed = _kp("kp2", "Drop me")
-    service.replace_modules_for_path("test", [_module("m1", [first, doomed])], identity_mode="explicit")
+    service.replace_modules_for_path(
+        "test", [_module("m1", [first, doomed])], identity_mode="explicit"
+    )
 
     def prepare(tx):
         tx.progress.current_module_id = "m1"
@@ -301,8 +311,12 @@ async def test_full_replace_mints_new_id_for_rewritten_content(path_id):
     tables_id = module["knowledge_points"][0]["id"]
     xor_id = module["knowledge_points"][1]["id"]
     store = LearningStore()
-    store.mutate(path_id, lambda tx: _seed_objective_evidence(tx, tables_id, module["id"], mastery=0.8))
-    store.mutate(path_id, lambda tx: _seed_objective_evidence(tx, xor_id, module["id"], mastery=1.0))
+    store.mutate(
+        path_id, lambda tx: _seed_objective_evidence(tx, tables_id, module["id"], mastery=0.8)
+    )
+    store.mutate(
+        path_id, lambda tx: _seed_objective_evidence(tx, xor_id, module["id"], mastery=1.0)
+    )
 
     rebuilt = await _build(
         path_id,
@@ -348,7 +362,9 @@ async def test_targeted_revise_resets_only_the_rewritten_waypoint(path_id):
     tables_id = module["knowledge_points"][0]["id"]
     xor_id = module["knowledge_points"][1]["id"]
     store = LearningStore()
-    store.mutate(path_id, lambda tx: _seed_objective_evidence(tx, tables_id, module["id"], mastery=0.8))
+    store.mutate(
+        path_id, lambda tx: _seed_objective_evidence(tx, tables_id, module["id"], mastery=0.8)
+    )
 
     revised = await MasteryReviseTool().execute(
         _mastery_path_id=path_id,
@@ -365,9 +381,7 @@ async def test_targeted_revise_resets_only_the_rewritten_waypoint(path_id):
     assert xor_id not in _evidence_ids(progress)
     events = store.list_events(path_id)
     last_replace = next(
-        event
-        for event in reversed(events)
-        if event.event_type == "path.module_revised"
+        event for event in reversed(events) if event.event_type == "path.module_revised"
     )
     assert last_replace.payload["identity_map"]["mode"] == "explicit"
 
@@ -451,15 +465,23 @@ def test_correct_answer_key_regrades_and_restores_mastery(tmp_path):
     assert progress.quiz_attempts[0].is_correct is True
     assert progress.quiz_attempts[0].voided is False
     assert progress.mastery_levels["kp1"] == 1.0
-    assert all(record.status == "graduated" for record in progress.error_records if record.question_id == "q1")
+    assert all(
+        record.status == "graduated"
+        for record in progress.error_records
+        if record.question_id == "q1"
+    )
 
 
 @pytest.mark.asyncio
-async def test_repair_question_tool_voids_wrong_key_from_question_bank(path_id, tmp_path, monkeypatch):
+async def test_repair_question_tool_voids_wrong_key_from_question_bank(
+    path_id, tmp_path, monkeypatch
+):
     from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 
     session_store = SQLiteSessionStore(db_path=tmp_path / "chat.db")
-    monkeypatch.setattr("deeptutor.services.session.get_sqlite_session_store", lambda: session_store)
+    monkeypatch.setattr(
+        "deeptutor.services.session.get_sqlite_session_store", lambda: session_store
+    )
     session = await session_store.create_session(title="Mastery Session")
     await _build(
         path_id,
@@ -541,7 +563,9 @@ async def test_defer_advances_route_without_marking_mastered(path_id):
         expected_answer="4",
     )
 
-    deferred = json.loads((await MasteryDeferObjectiveTool().execute(_mastery_path_id=path_id)).content)
+    deferred = json.loads(
+        (await MasteryDeferObjectiveTool().execute(_mastery_path_id=path_id)).content
+    )
     progress = LearningStore().load(path_id)
     assert progress is not None
     first = progress.modules[0].knowledge_points[0]
@@ -582,7 +606,9 @@ async def test_skip_question_stays_on_the_same_objective(path_id):
         question="2+2?",
         expected_answer="4",
     )
-    skipped = json.loads((await MasterySkipQuestionTool().execute(_mastery_path_id=path_id)).content)
+    skipped = json.loads(
+        (await MasterySkipQuestionTool().execute(_mastery_path_id=path_id)).content
+    )
     progress = LearningStore().load(path_id)
     assert progress is not None
     assert skipped["next"]["knowledge_point_id"] == first_id
