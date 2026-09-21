@@ -19,7 +19,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from deeptutor.multi_user.context import get_current_user
 from deeptutor.multi_user.paths import get_admin_path_service
 from deeptutor.services.i18n import t
 from deeptutor.services.persona import (
@@ -49,13 +48,13 @@ def _admin_persona_service() -> PersonaService:
     return PersonaService(root=get_admin_path_service().get_workspace_dir() / "personas")
 
 
-@router.get("/personas")
-async def list_personas() -> dict[str, list[dict[str, object]]]:
-    service = get_persona_service()
-    own = [info.to_dict() for info in service.list_personas()]
-    user = get_current_user()
-    if user.is_admin:
-        return {"personas": own}
+def _visible_personas() -> list[dict[str, object]]:
+    """Workspace-local personas plus unshadowed admin presets.
+
+    Isolation is preserved: CRUD still writes only to the active workspace.
+    Admin-authored presets are a read-only overlay for every role.
+    """
+    own = [info.to_dict() for info in get_persona_service().list_personas()]
     own_names = {item["name"] for item in own}
     merged = list(own)
     for preset in _admin_persona_service().list_personas():
@@ -64,7 +63,12 @@ async def list_personas() -> dict[str, list[dict[str, object]]]:
         entry = preset.to_dict()
         entry.update({"source": "admin", "read_only": True})
         merged.append(entry)
-    return {"personas": merged}
+    return merged
+
+
+@router.get("/personas")
+async def list_personas() -> dict[str, list[dict[str, object]]]:
+    return {"personas": _visible_personas()}
 
 
 @router.get("/personas/{name}")
@@ -77,14 +81,14 @@ async def get_persona(name: str) -> dict[str, object]:
     except InvalidPersonaNameError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    user = get_current_user()
-    if not user.is_admin:
-        try:
-            detail = _admin_persona_service().get_detail(name).to_dict()
-            detail.update({"source": "admin", "read_only": True})
-            return detail
-        except (PersonaNotFoundError, InvalidPersonaNameError):
-            pass
+    try:
+        detail = _admin_persona_service().get_detail(name).to_dict()
+        detail.update({"source": "admin", "read_only": True})
+        return detail
+    except PersonaNotFoundError:
+        pass
+    except InvalidPersonaNameError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     raise HTTPException(status_code=404, detail=t("api.persona_not_found", name=name))
 
 

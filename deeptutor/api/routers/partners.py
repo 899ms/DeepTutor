@@ -531,11 +531,10 @@ def _load_persona_markdown(name: str) -> str:
     except Exception:
         pass
     try:
-        if not get_current_user().is_admin:
-            admin_service = PersonaService(
-                root=get_admin_path_service().get_workspace_dir() / "personas"
-            )
-            return strip_frontmatter(admin_service.get_detail(name).content)
+        admin_service = PersonaService(
+            root=get_admin_path_service().get_workspace_dir() / "personas"
+        )
+        return strip_frontmatter(admin_service.get_detail(name).content)
     except Exception:
         pass
     return ""
@@ -609,13 +608,12 @@ async def soul_sources():
     except Exception:
         logger.warning("Failed to list user personas", exc_info=True)
     try:
-        if not get_current_user().is_admin:
-            admin_service = PersonaService(
-                root=get_admin_path_service().get_workspace_dir() / "personas"
-            )
-            for info in admin_service.list_personas():
-                if info.name not in seen:
-                    personas.append(_persona_entry(admin_service, info))
+        admin_service = PersonaService(
+            root=get_admin_path_service().get_workspace_dir() / "personas"
+        )
+        for info in admin_service.list_personas():
+            if info.name not in seen:
+                personas.append(_persona_entry(admin_service, info))
     except Exception:
         logger.warning("Failed to list admin personas", exc_info=True)
 

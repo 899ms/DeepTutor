@@ -27,7 +27,9 @@ import { useTranslation } from "react-i18next";
 
 import ChatComposer from "@/components/chat/home/ChatComposer";
 import type { ContextBudget } from "@/components/chat/home/ContextBudgetChip";
+import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import type { CapabilityDef } from "@/features/capabilities/presentation";
+import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
 import type { SelectedQuestionEntry } from "@/components/chat/QuestionBankPicker";
 import { useAttachmentLimits } from "@/lib/attachment-limits";
@@ -187,6 +189,14 @@ interface StandaloneComposerProps {
    */
   personaSelection?: string;
   onPersonaSelectionChange?: (persona: string) => void;
+  /**
+   * Skill / MCP narrowing for this conversation. Same contract as
+   * `ChatComposer`: omit all three to keep inheriting the workspace
+   * allowlist without a picker.
+   */
+  resourceCatalog?: ComposerResourceCatalog;
+  resourceSelection?: ResourceSelection;
+  onResourceSelectionChange?: (selection: ResourceSelection) => void;
   /** Hide the My Agents reference entry. */
   agentsAvailable?: boolean;
   /** Receives a function that drops text into the textarea (ask_user chips). */
@@ -217,6 +227,9 @@ function StandaloneComposerImpl({
   onLLMSelectionChange,
   personaSelection,
   onPersonaSelectionChange,
+  resourceCatalog,
+  resourceSelection,
+  onResourceSelectionChange,
   agentsAvailable = false,
   prefillInputRef,
   contextBudget = null,
@@ -760,9 +773,16 @@ function StandaloneComposerImpl({
       if (!resourceReuse.policy.persona) setSelectedPersona(null);
       applyKnowledgeBases(retainedKnowledgeBases(selectedKnowledgeBases, agentNameSet, resourceReuse.policy));
       if (!resourceReuse.policy.memory) setSelectedMemoryFiles([]);
+      if (onResourceSelectionChange) {
+        const current = resourceSelection ?? { skills: [], mcp: [] };
+        onResourceSelectionChange({
+          skills: resourceReuse.policy.skills ? current.skills : [],
+          mcp: resourceReuse.policy.mcp ? current.mcp : [],
+        });
+      }
     },
     [
-      resourceReuse, applyKnowledgeBases, agentNameSet,
+      resourceReuse, applyKnowledgeBases, agentNameSet, onResourceSelectionChange, resourceSelection,
       attachments,
       awaitingUserReply,
       isStreaming,
@@ -882,6 +902,9 @@ function StandaloneComposerImpl({
         onPersonaSelectionChange={onPersonaSelectionChange}
         personaSelectorOpen={personaSelectorOpen}
         onPersonaSelectorOpenChange={setPersonaSelectorOpen}
+        resourceCatalog={resourceCatalog}
+        resourceSelection={resourceSelection}
+        onResourceSelectionChange={onResourceSelectionChange}
         llmOptions={llmOptions}
         activeLLMDefault={activeLLMDefault}
         llmSelection={llmSelection}
