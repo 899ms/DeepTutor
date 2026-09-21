@@ -90,11 +90,12 @@ def test_default_change_and_key_rotation_do_not_invalidate_binding(catalog, tmp_
 
 @pytest.mark.parametrize("missing_identity", [False, True])
 def test_lightrag_reconciliation_checks_bound_index_not_global_default(
-    catalog, tmp_path, missing_identity
+    catalog, tmp_path, monkeypatch, missing_identity
 ):
     from deeptutor.knowledge.manager import _reconcile_embedding_flags
     from deeptutor.services.rag.pipelines.lightrag import engine, storage
 
+    monkeypatch.setattr(engine, "installed_version", lambda: "synthetic-test-version")
     entry = write_entry(tmp_path, rag_provider="lightrag")
     root = tmp_path / "kb" / "version-1"
     root.mkdir()
@@ -114,10 +115,13 @@ def test_lightrag_reconciliation_checks_bound_index_not_global_default(
 
 
 @pytest.mark.parametrize("drift", [False, True])
-def test_lightrag_detail_and_reconciliation_keep_recorded_bound_version(catalog, tmp_path, drift):
+def test_lightrag_detail_and_reconciliation_keep_recorded_bound_version(
+    catalog, tmp_path, monkeypatch, drift
+):
     from deeptutor.knowledge.manager import KnowledgeBaseManager, _reconcile_embedding_flags
     from deeptutor.services.rag.pipelines.lightrag import engine, storage
 
+    monkeypatch.setattr(engine, "installed_version", lambda: "synthetic-test-version")
     entry = write_entry(tmp_path, rag_provider="lightrag")
     for number, model in [(1, "a"), (2, "b")]:
         root = tmp_path / "kb" / f"version-{number}"
@@ -150,6 +154,7 @@ def test_lightrag_append_uses_policy_of_actual_bound_index(catalog, tmp_path, mo
     from deeptutor.services.rag.pipelines.lightrag import engine, indexing_policy, storage
     from deeptutor.services.rag.pipelines.lightrag.pipeline import BatchOutcome, LightRagPipeline
 
+    monkeypatch.setattr(engine, "installed_version", lambda: "synthetic-test-version")
     write_entry(tmp_path, rag_provider="lightrag")
     for number, model in [(1, "a"), (2, "b")]:
         root = tmp_path / "kb" / f"version-{number}"
