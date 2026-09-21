@@ -19,7 +19,6 @@ from deeptutor.multi_user.models import CurrentUser, UserScope
 from deeptutor.services.embedding.config import EmbeddingConfig
 from deeptutor.services.llm.exceptions import LLMAPIError, LLMAuthenticationError
 from deeptutor.services.parsing.types import ParsedDocument
-from deeptutor.services.rag.embedding_signature import signature_from_config
 from deeptutor.services.rag.factory import get_pipeline, list_pipelines, normalize_provider_name
 from deeptutor.services.rag.index_versioning import list_kb_versions
 from deeptutor.services.rag.pipelines.lightrag import config, engine, indexing_policy, storage
@@ -41,6 +40,14 @@ REQUIRES_LIGHTRAG = pytest.mark.skipif(
     importlib.util.find_spec("lightrag") is None,
     reason="requires the optional rag-lightrag extra",
 )
+
+
+@pytest.fixture(autouse=True)
+def _active_embedding(monkeypatch: pytest.MonkeyPatch) -> None:
+    from deeptutor.services.embedding.config import EmbeddingConfig
+
+    cfg = EmbeddingConfig(model="test-embedding", dim=3, api_key="test-key")
+    monkeypatch.setattr("deeptutor.services.embedding.get_embedding_config", lambda: cfg)
 
 
 class _Bridge:
@@ -464,12 +471,15 @@ def test_embedding_adapter_preserves_query_and_document_roles(monkeypatch) -> No
         max_tokens = 99
 
     class Client:
+        def __init__(self, *, config):
+            self.config = config
+
         async def embed(self, texts, *, input_type=None):
             calls.append((list(texts), input_type))
             return [[1, 2, 3] for _ in texts]
 
     monkeypatch.setattr("deeptutor.services.embedding.get_embedding_config", EmbeddingConfig)
-    monkeypatch.setattr("deeptutor.services.embedding.get_embedding_client", Client)
+    monkeypatch.setattr("deeptutor.services.embedding.client.EmbeddingClient", Client)
     adapter = config.build_embedding_func()
     query = asyncio.run(adapter(["question"], context="query"))
     document = asyncio.run(adapter(["passage"], context="document"))
@@ -687,6 +697,8 @@ def test_flat_schema_two_candidate_fails_closed_until_published(tmp_path: Path) 
 
 
 def _write_published_version(root: Path, *, indexing_policy_value: dict | None = None) -> None:
+    from deeptutor.services.rag.embedding_signature import embedding_meta_fields
+
     root.mkdir(parents=True)
     (root / "kv_store_doc_status.json").write_text(
         json.dumps({"doc": {"status": "processed", "chunks_list": ["chunk"]}}),
@@ -701,9 +713,7 @@ def _write_published_version(root: Path, *, indexing_policy_value: dict | None =
                 "parser_bridge_schema": 1,
                 "state": "published",
                 "indexing_policy": indexing_policy_value or {"policy": "legacy_unpinned"},
-                "embedding_signature": signature_from_config(
-                    _indexing_snapshot().embedding_config
-                ).hash(),
+                **embedding_meta_fields(),
             }
         ),
         encoding="utf-8",
@@ -886,7 +896,7 @@ def test_first_index_uses_defaults_instead_of_creation_time_pending_policy(tmp_p
         lambda _: pytest.fail("restored old empty policy"),
     )
 
-    async def check_defaults(_root, _files, _progress, accepted):
+    async def check_defaults(_root, _files, _progress, accepted, **_kwargs):
         assert accepted is snapshot
         raise RuntimeError("checked defaults before provider call")
 
@@ -1360,7 +1370,7 @@ def test_append_rejects_corrupt_or_unpublished_existing_version(
 
 def test_search_failure_is_not_reported_as_empty_success(tmp_path: Path, monkeypatch) -> None:
     root = tmp_path / "version-1"
-    root.mkdir()
+    _write_published_version(root)
     pipeline = LightRagPipeline(kb_base_dir=str(tmp_path))
     monkeypatch.setattr(storage, "latest_published_root", lambda _kb_dir: root)
     monkeypatch.setattr(pipeline, "_resolve_mode", lambda *_args: "hybrid")

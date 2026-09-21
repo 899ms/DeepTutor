@@ -337,6 +337,8 @@ async def submit_quiz_answers(material_id: str, payload: QuizAnswersPayload) -> 
                     material_title=material_title,
                     section_id=str(payload.locator),
                     section_title=section_title,
+                    mastery_path_id=str(question.get("mastery_path_id") or ""),
+                    knowledge_point_id=str(question.get("knowledge_point_id") or ""),
                 )
             )
         except RecordAssessmentError as exc:

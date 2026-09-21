@@ -1127,6 +1127,12 @@ async def quiz_attempt(req: QuizAttemptRequest) -> dict[str, Any]:
                     record_assessment,
                 )
 
+                latest_attempt = progress.quiz_attempts[-1]
+                attempt_count = sum(
+                    1
+                    for attempt in progress.quiz_attempts
+                    if attempt.block_id == req.block_id and attempt.question_id == req.question_id
+                )
                 await record_assessment(
                     AssessmentRecord(
                         session_id=session_id,
@@ -1147,6 +1153,13 @@ async def quiz_attempt(req: QuizAttemptRequest) -> dict[str, Any]:
                         material_title=book.title,
                         section_id=req.page_id,
                         section_title=page.title if page is not None else "",
+                        mastery_path_id=str(question.get("mastery_path_id") or ""),
+                        knowledge_point_id=str(question.get("knowledge_point_id") or ""),
+                        attempt_count=max(1, attempt_count),
+                        attempt_id=(
+                            f"book:{req.book_id}:{req.block_id}:{question_id}:"
+                            f"{latest_attempt.timestamp:.9f}"
+                        ),
                     )
                 )
         except Exception:

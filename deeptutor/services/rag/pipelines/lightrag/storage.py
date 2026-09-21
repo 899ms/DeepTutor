@@ -23,7 +23,11 @@ from datetime import datetime, timezone
 import json
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from deeptutor.services.embedding.config import EmbeddingConfig
+    from deeptutor.services.rag.index_versioning import EmbeddingSignature
 
 from deeptutor.services.file_io import atomic_write_json
 
@@ -245,11 +249,31 @@ def published_root_for_embedding(kb_dir: Path, signature: str | None) -> Path | 
     return None
 
 
+def embedding_matches(root_dir: Path, signature: EmbeddingSignature | None) -> bool:
+    """Compare the published vector identity, never just its dimension."""
+    meta = _read_meta(root_dir) or {}
+    return signature is not None and meta.get("embedding_signature") == signature.hash()
+
+
+def require_compatible_embedding(root_dir: Path, config: EmbeddingConfig) -> None:
+    """Reject reads and appends when the published embedding identity differs."""
+    from deeptutor.services.rag.embedding_signature import signature_from_config
+
+    from .indexing_policy import EmbeddingMismatchError
+
+    if not embedding_matches(root_dir, signature_from_config(config)):
+        raise EmbeddingMismatchError(
+            "The current embedding configuration does not match this LightRAG index. "
+            "Restore the original embedding configuration or rebuild with the current embedding "
+            "before querying or adding documents."
+        )
+
+
 def write_meta(
     root_dir: Path,
     *,
     indexing_policy: dict[str, Any] | None = None,
-    embedding_config: Any | None = None,
+    embedding_config: EmbeddingConfig | None = None,
 ) -> None:
     """Write a flat-layout ``meta.json`` so the version lists as ready.
 
@@ -269,15 +293,15 @@ def write_meta(
     target = Path(root_dir)
     previous = _read_meta(target) or {}
     now = datetime.now(timezone.utc).replace(tzinfo=None).isoformat() + "Z"
-    if embedding_config is not None:
+    if embedding_config is None:
+        embedding_fields = embedding_meta_fields()
+    else:
         signature = signature_from_config(embedding_config)
         embedding_fields = {
             "embedding_signature": signature.hash(),
             "embedding_model": signature.model,
             "embedding_dim": signature.dimension,
         }
-    else:
-        embedding_fields = embedding_meta_fields()
     payload = {
         "version": target.name,
         "signature": PROVIDER,

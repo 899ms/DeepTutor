@@ -115,9 +115,13 @@ export default function KbDocumentsSection({
           "Restore access to the pinned indexing models in Settings before adding documents.",
         )
       : requiresLightRagRebuild
-        ? t(
-            "This legacy LightRAG index remains queryable, but it must be fully rebuilt before incremental uploads.",
-          )
+        ? kb.metadata?.embedding_mismatch
+          ? t(
+              "The current embedding configuration does not match this index. Restore the original configuration or rebuild with the current embedding before querying or adding documents.",
+            )
+          : t(
+              "This legacy LightRAG index remains queryable, but it must be fully rebuilt before incremental uploads.",
+            )
         : needsReindex
           ? t(
               "This knowledge base is in legacy index format and needs reindex before upload.",

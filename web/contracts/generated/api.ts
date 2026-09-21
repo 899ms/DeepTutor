@@ -12786,7 +12786,7 @@ export interface components {
        * @default
        */
       readonly result:
-        ("correct" | "incorrect" | "partial" | "ungraded") | string;
+        ("correct" | "incorrect" | "partial" | "ungraded" | "voided") | string;
       /**
        * Score Trend
        * @default new
@@ -12891,6 +12891,11 @@ export interface components {
        * @default null
        */
       readonly filename: string | null;
+      /**
+       * Id
+       * @default null
+       */
+      readonly id: string | null;
       /**
        * Mime Type
        * @default null

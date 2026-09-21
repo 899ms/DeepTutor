@@ -282,6 +282,33 @@ def test_unsupported_reasoning_and_nonvision_inheritance_fail(role_environment):
         roles.validate_models(LightRagRoleModels.model_validate(models))
 
 
+def test_explicit_catalog_vision_capability_is_used_for_custom_model(role_environment, monkeypatch):
+    role_environment["vision"]["model-0"] = False
+    monkeypatch.setattr(
+        roles,
+        "allowed_llm_options",
+        lambda: {
+            "active": choice(0),
+            "options": [
+                {
+                    **choice(0),
+                    "model": "model-0",
+                    "provider": "custom",
+                    "model_name": "Custom vision model",
+                    "profile_name": "Custom provider",
+                    "is_active_default": True,
+                    "declared_vision": True,
+                    "supported_reasoning_efforts": ["none", "low", "medium", "high"],
+                }
+            ],
+        },
+    )
+
+    config = roles.resolve_selection(LLMSelection(**choice(0)), vision=True)
+
+    assert config.model == "model-0"
+
+
 def test_legacy_single_policy_keeps_its_original_algorithm_and_vision(role_environment):
     legacy = policy.freeze_snapshot(choice(3, "none")).persisted_policy()
     adapted = policy.snapshot_from_persisted(legacy)
@@ -385,7 +412,7 @@ def test_failed_terminal_persistence_does_not_publish_candidate(
     monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
     monkeypatch.setattr(storage, "has_output", lambda _root: True)
 
-    async def indexed(root, *_args):
+    async def indexed(root, *_args, **_kwargs):
         (root / "kv_store_doc_status.json").write_text('{"doc": {"status": "processed"}}')
         return BatchOutcome(
             1, accepted=1, processed=("doc.md",), indexing_policy=snapshot.persisted_policy()
@@ -512,7 +539,7 @@ def test_concurrent_first_writers_do_not_publish_different_policies(
         entered = asyncio.Event()
         release = asyncio.Event()
 
-        async def indexed(root, *_args):
+        async def indexed(root, *_args, **_kwargs):
             (root / "kv_store_doc_status.json").write_text('{"doc": {"status": "processed"}}')
             entered.set()
             await release.wait()
@@ -675,7 +702,7 @@ def test_native_workspace_append_invalidates_queued_rebuild_without_meta_change(
     pipeline = LightRagPipeline(str(tmp_path))
     monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
 
-    async def append_native(*args):
+    async def append_native(*args, **_kwargs):
         status.write_text('{"doc":{"status":"processed"},"later":{"status":"processed"}}')
         result = BatchOutcome(
             requested=2 if outcome_kind == "partial_append" else 1,
@@ -889,7 +916,7 @@ def test_task_publishes_actual_frozen_embedding_after_defaults_change(
     pipeline = LightRagPipeline(str(tmp_path))
     monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
 
-    async def index(root, _files, _progress, snapshot):
+    async def index(root, _files, _progress, snapshot, **_kwargs):
         assert snapshot.embedding_config.model == "embed-one"
         (root / "kv_store_doc_status.json").write_text('{"doc": {"status": "processed"}}')
         return BatchOutcome(
@@ -1070,7 +1097,7 @@ def test_append_policy_and_target_follow_older_bound_version(
     pipeline = LightRagPipeline(str(tmp_path))
     monkeypatch.setattr(pipeline, "_ensure_available", lambda: None)
 
-    async def index(root, _files, _progress, snapshot):
+    async def index(root, _files, _progress, snapshot, **_kwargs):
         assert root == first
         assert snapshot.extract.config.model == "model-0"
         return BatchOutcome(

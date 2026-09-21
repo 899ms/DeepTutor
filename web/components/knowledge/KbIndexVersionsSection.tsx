@@ -35,6 +35,7 @@ import {
 import KbIndexFailureBanner from "./KbIndexFailureBanner";
 import LightRagIndexingProvenance from "./LightRagIndexingProvenance";
 import { knowledgeBaseRef } from "@/lib/knowledge-helpers";
+import LightRagEmbeddingWarning from "./LightRagEmbeddingWarning";
 
 interface KbIndexVersionsSectionProps {
   kb: KnowledgeBase;
@@ -251,6 +252,7 @@ export default function KbIndexVersionsSection({
       </div>
 
       {isError && <KbIndexFailureBanner kb={kb} />}
+      <LightRagEmbeddingWarning kb={kb} />
       {kb.metadata?.embedding_status === "missing" && (
         <p
           role="alert"

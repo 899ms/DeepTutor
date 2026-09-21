@@ -3584,10 +3584,10 @@ async def run_reindex_task(
                 if candidate_root is not None:
                     return
                 mutated = False
-                if kb_entry.get("needs_reindex"):
+                if signature_hash != LIGHTRAG_PROVIDER and kb_entry.get("needs_reindex"):
                     kb_entry["needs_reindex"] = False
                     mutated = True
-                if kb_entry.get("embedding_mismatch"):
+                if signature_hash != LIGHTRAG_PROVIDER and kb_entry.get("embedding_mismatch"):
                     kb_entry.pop("embedding_mismatch", None)
                     mutated = True
                 if mutated:

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 import logging
 from pathlib import Path
 import shutil
 import traceback
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from deeptutor.services.embedding.config import EmbeddingConfig
 
 from deeptutor.runtime.home import get_runtime_data_root
 from deeptutor.services.rag.index_versioning import (
@@ -279,9 +283,15 @@ class LightRagPipeline:
         file_paths: List[str],
         progress_callback: Callable[[int, int], Any] | None,
         snapshot: IndexingPolicySnapshot | None = None,
+        *,
+        embedding_config: EmbeddingConfig | None = None,
     ) -> BatchOutcome:
         if snapshot is None:
             snapshot = freeze_default_snapshot()
+        if embedding_config is None:
+            from deeptutor.services.embedding import get_embedding_config
+
+            embedding_config = deepcopy(get_embedding_config())
 
         async def job(io_bridge: OwnerLoopBridge) -> BatchOutcome:
             io_bridge.raise_if_cancelled()
@@ -300,6 +310,7 @@ class LightRagPipeline:
                     io_bridge=io_bridge,
                     enable_vlm=any("i" in item.process_options for item in staged),
                     indexing_snapshot=snapshot,
+                    embedding_config=embedding_config,
                 )
             except BaseException:
                 for item in staged:
@@ -408,17 +419,25 @@ class LightRagPipeline:
 
     async def _initialize_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
+        from deeptutor.services.embedding import get_embedding_config
+
+        embedding_config = deepcopy(get_embedding_config())
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         snapshot = kwargs.get("indexing_snapshot") or kwargs.get("accepted_indexing_snapshot")
         if snapshot is None:
             snapshot = freeze_default_snapshot()
         snapshot = indexing_policy.with_embedding(snapshot)
+        embedding_config = snapshot.embedding_config
         if "image_analysis" in kwargs:
             snapshot = indexing_policy.with_image_analysis(snapshot, kwargs["image_analysis"])
         root_dir = resolve_storage_dir_for_rebuild(kb_dir, None)
         try:
             outcome = await self._run_indexing(
-                root_dir, file_paths, kwargs.get("progress_callback"), snapshot
+                root_dir,
+                file_paths,
+                kwargs.get("progress_callback"),
+                snapshot,
+                embedding_config=embedding_config,
             )
             if not storage.has_output(root_dir):
                 raise RuntimeError(f"LightRAG did not produce a ready index for {kb_name!r}")
@@ -473,6 +492,9 @@ class LightRagPipeline:
 
     async def _add_documents_owned(self, kb_name: str, file_paths: List[str], **kwargs) -> bool:
         self._ensure_available()
+        from deeptutor.services.embedding import get_embedding_config
+
+        embedding_config = deepcopy(get_embedding_config())
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         existing = storage.latest_published_root(kb_dir)
         from deeptutor.services.rag.embedding_binding import bound_graph_storage_root
@@ -485,13 +507,18 @@ class LightRagPipeline:
                 "This LightRAG index is legacy, unpublished, or corrupt and must be rebuilt "
                 "before appending."
             )
-        snapshot = kwargs.get("accepted_indexing_snapshot") or resolve_write_snapshot(
+        accepted_snapshot = kwargs.get("accepted_indexing_snapshot")
+        compatibility_config = getattr(accepted_snapshot, "embedding_config", None)
+        if existing is not None:
+            storage.require_compatible_embedding(existing, compatibility_config or embedding_config)
+        snapshot = accepted_snapshot or resolve_write_snapshot(
             kb_dir,
             base_dir=self.kb_base_dir,
             kb_name=kb_name,
             explicit=explicit,
         )
         snapshot = indexing_policy.with_embedding(snapshot)
+        embedding_config = snapshot.embedding_config
         if "image_analysis" in kwargs:
             snapshot = indexing_policy.with_image_analysis(snapshot, kwargs["image_analysis"])
         if existing is not None:
@@ -502,7 +529,11 @@ class LightRagPipeline:
             is_update = False
         try:
             outcome = await self._run_indexing(
-                root_dir, file_paths, kwargs.get("progress_callback"), snapshot
+                root_dir,
+                file_paths,
+                kwargs.get("progress_callback"),
+                snapshot,
+                embedding_config=embedding_config,
             )
             if not storage.has_output(root_dir):
                 raise RuntimeError(f"LightRAG did not produce a ready index for {kb_name!r}")
@@ -581,14 +612,12 @@ class LightRagPipeline:
         mode = self._resolve_mode(kb_name, kwargs)
         try:
             self._ensure_available()
-
-            from copy import deepcopy
-
             from deeptutor.services.embedding import get_embedding_config
 
             from .roles import resolve_query_roles
 
             embedding_config = deepcopy(get_embedding_config())
+            storage.require_compatible_embedding(root_dir, embedding_config)
             query_roles = resolve_query_roles()
 
             async def job(io_bridge: OwnerLoopBridge) -> Any:
@@ -610,6 +639,8 @@ class LightRagPipeline:
             answer, sources = await run_in_worker_loop(job)
         except lr_config.LightRagNotAvailableError as exc:
             return self._error_result(query, exc, error_type="not_configured")
+        except indexing_policy.EmbeddingMismatchError as exc:
+            return self._error_result(query, exc, error_type=exc.code)
         except Exception as exc:
             self.logger.error("LightRAG search failed: %s", exc)
             self.logger.error(traceback.format_exc())

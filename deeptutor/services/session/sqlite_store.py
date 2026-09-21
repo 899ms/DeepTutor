@@ -103,8 +103,10 @@ SCORE_TRENDS = frozenset({"new", "improved", "declined", "unchanged"})
 # Stored ``result=''`` is a pre-v2 row: treat it as already graded so wrong
 # lists do not swallow ungraded spectacle rows, and old incorrect rows stay
 # in the wrong filter.
-_GRADED_RESULT_SQL = "COALESCE(NULLIF(n.result,''),'graded') NOT IN ('ungraded','')"
-_GRADED_RESULT_SQL_UNALIASED = "COALESCE(NULLIF(result,''),'graded') NOT IN ('ungraded','')"
+_GRADED_RESULT_SQL = "COALESCE(NULLIF(n.result,''),'graded') NOT IN ('ungraded','voided','')"
+_GRADED_RESULT_SQL_UNALIASED = (
+    "COALESCE(NULLIF(result,''),'graded') NOT IN ('ungraded','voided','')"
+)
 ACTIVE_TURN_STATUSES = frozenset({"queued", "running", "waiting_input"})
 TERMINAL_TURN_STATUSES = frozenset({"completed", "failed", "cancelled"})
 ALL_TURN_STATUSES = ACTIVE_TURN_STATUSES | TERMINAL_TURN_STATUSES
@@ -386,6 +388,27 @@ class SQLiteSessionStore:
 
                 CREATE INDEX IF NOT EXISTS idx_notebook_entries_bookmarked
                     ON notebook_entries(bookmarked, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS assessment_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    notebook_entry_id INTEGER,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    turn_id TEXT NOT NULL DEFAULT '',
+                    question_id TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    assessment_type TEXT NOT NULL,
+                    result TEXT NOT NULL,
+                    mastery_path_id TEXT NOT NULL DEFAULT '',
+                    knowledge_point_id TEXT NOT NULL DEFAULT '',
+                    occurred_at REAL NOT NULL,
+                    assessment_json TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_assessment_attempts_session_time
+                    ON assessment_attempts(session_id, occurred_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_assessment_attempts_linkage
+                    ON assessment_attempts(mastery_path_id, knowledge_point_id, occurred_at DESC);
 
                 CREATE TABLE IF NOT EXISTS reading_quiz_pending (
                     material_id TEXT NOT NULL,
@@ -2713,7 +2736,13 @@ class SQLiteSessionStore:
                     score_trend,
                 )
                 assessment = self._notebook_assessment_values(item, is_correct)
-                resolved_on_insert = 0 if assessment[1] == "ungraded" else (1 if is_correct else 0)
+                resolved_on_insert = (
+                    0
+                    if assessment[1] == "ungraded"
+                    else 1
+                    if assessment[1] == "voided" or is_correct
+                    else 0
+                )
                 if images_json is None:
                     conn.execute(
                         """
@@ -2753,6 +2782,7 @@ class SQLiteSessionStore:
                             is_correct = excluded.is_correct,
                             resolved = CASE
                                 WHEN excluded.result = 'ungraded' THEN notebook_entries.resolved
+                                WHEN excluded.result = 'voided' THEN 1
                                 WHEN excluded.is_correct = 1 THEN 1
                                 WHEN excluded.is_correct = 0 AND notebook_entries.is_correct = 1 THEN 0
                                 ELSE notebook_entries.resolved
@@ -2818,6 +2848,7 @@ class SQLiteSessionStore:
                             is_correct = excluded.is_correct,
                             resolved = CASE
                                 WHEN excluded.result = 'ungraded' THEN notebook_entries.resolved
+                                WHEN excluded.result = 'voided' THEN 1
                                 WHEN excluded.is_correct = 1 THEN 1
                                 WHEN excluded.is_correct = 0 AND notebook_entries.is_correct = 1 THEN 0
                                 ELSE notebook_entries.resolved
@@ -2850,6 +2881,95 @@ class SQLiteSessionStore:
 
     async def upsert_notebook_entries(self, session_id: str, items: list[dict[str, Any]]) -> int:
         return await self._run(self._upsert_notebook_entries_sync, session_id, items)
+
+    def _append_assessment_attempt_sync(
+        self,
+        session_id: str,
+        notebook_entry_id: int | None,
+        attempt: dict[str, Any],
+    ) -> bool:
+        attempt_id = str(attempt.get("attempt_id") or "").strip()
+        question_id = str(attempt.get("question_id") or "").strip()
+        if not attempt_id or not question_id:
+            raise ValueError("attempt_id and question_id are required")
+        with self._connect() as conn:
+            if (
+                conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+                is None
+            ):
+                raise ValueError(f"Session not found: {session_id}")
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO assessment_attempts (
+                    attempt_id, notebook_entry_id, session_id, turn_id,
+                    question_id, source, assessment_type, result,
+                    mastery_path_id, knowledge_point_id, occurred_at,
+                    assessment_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attempt_id,
+                    notebook_entry_id,
+                    session_id,
+                    str(attempt.get("turn_id") or ""),
+                    question_id,
+                    str(attempt.get("source") or "deep_question"),
+                    str(attempt.get("assessment_type") or "quiz"),
+                    str(attempt.get("result") or "ungraded"),
+                    str(attempt.get("mastery_path_id") or ""),
+                    str(attempt.get("knowledge_point_id") or ""),
+                    float(attempt.get("occurred_at") or time.time()),
+                    _json_dumps(attempt),
+                ),
+            )
+            inserted = bool(conn.execute("SELECT changes()").fetchone()[0])
+            conn.commit()
+        return inserted
+
+    async def append_assessment_attempt(
+        self,
+        session_id: str,
+        notebook_entry_id: int | None,
+        attempt: dict[str, Any],
+    ) -> bool:
+        """Append one immutable assessment event; duplicate ids are idempotent."""
+        return await self._run(
+            self._append_assessment_attempt_sync,
+            session_id,
+            notebook_entry_id,
+            attempt,
+        )
+
+    def _list_assessment_attempts_sync(
+        self,
+        session_id: str,
+        question_id: str,
+    ) -> list[dict[str, Any]]:
+        clauses = ["session_id = ?"]
+        params: list[Any] = [session_id]
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT assessment_json FROM assessment_attempts "
+                f"WHERE {' AND '.join(clauses)} ORDER BY occurred_at, rowid",  # nosec B608
+                tuple(params),
+            ).fetchall()
+        return [_json_loads(str(row["assessment_json"]), {}) for row in rows]
+
+    async def list_assessment_attempts(
+        self,
+        session_id: str,
+        *,
+        question_id: str = "",
+    ) -> list[dict[str, Any]]:
+        """Return immutable attempts in replay order for one session."""
+        return await self._run(
+            self._list_assessment_attempts_sync,
+            session_id,
+            question_id,
+        )
 
     def _put_reading_quiz_pending_sync(
         self, material_id: str, locator: int, questions: list[Any]

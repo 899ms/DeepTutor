@@ -50,19 +50,20 @@ def resolve_selection(
         # Empty explicitly omits provider reasoning controls; None retains the
         # legacy resolver defaults when restoring an older pinned index.
         config = config.model_copy(update={"reasoning_effort": ""})
+    option = next(
+        (
+            item
+            for item in model_options()["options"]
+            if item["profile_id"] == selection.profile_id and item["model_id"] == selection.model_id
+        ),
+        None,
+    )
+    if option is None:
+        raise ValueError("The selected model is unavailable.")
     if config.reasoning_effort:
-        option = next(
-            (
-                item
-                for item in model_options()["options"]
-                if item["profile_id"] == selection.profile_id
-                and item["model_id"] == selection.model_id
-            ),
-            None,
-        )
-        if option is None or config.reasoning_effort not in option["supported_reasoning_efforts"]:
+        if config.reasoning_effort not in option["supported_reasoning_efforts"]:
             raise ValueError("The selected model does not support this reasoning effort.")
-    if vision and not supports_vision(config.binding, config.model):
+    if vision and not option["supports_vision"]:
         raise ValueError("The selected VLM model does not support image inputs.")
     return config
 
