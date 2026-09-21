@@ -175,7 +175,12 @@ def test_lightrag_append_uses_policy_of_actual_bound_index(catalog, tmp_path, mo
         assert root.name == "version-1"
         assert snapshot.persisted_policy()["label"] == "a"
         assert embedding_config.model == "embed-a"
-        return BatchOutcome(requested=1, accepted=1, processed=("new.md",))
+        return BatchOutcome(
+            requested=1,
+            accepted=1,
+            processed=("new.md",),
+            indexing_policy=snapshot.persisted_policy(),
+        )
 
     monkeypatch.setattr(pipeline, "_run_indexing", index)
     with embedding_config_scope(get_embedding_config(selection("a"))):
