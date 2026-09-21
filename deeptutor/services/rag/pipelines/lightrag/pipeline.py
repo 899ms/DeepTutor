@@ -427,6 +427,9 @@ class LightRagPipeline:
         embedding_config = deepcopy(get_embedding_config())
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         existing = storage.latest_published_root(kb_dir)
+        from deeptutor.services.rag.embedding_binding import bound_graph_storage_root
+
+        existing = bound_graph_storage_root(kb_dir, storage.PROVIDER, existing)
         versions = list_kb_versions(kb_dir)
         explicit = kwargs.get("indexing_snapshot")
         if explicit is not None and (existing is not None or versions):
@@ -512,6 +515,9 @@ class LightRagPipeline:
     async def search(self, query: str, kb_name: str, **kwargs) -> Dict[str, Any]:
         kb_dir = resolve_kb_dir(self.kb_base_dir, kb_name)
         root_dir = storage.latest_published_root(kb_dir)
+        from deeptutor.services.rag.embedding_binding import bound_graph_storage_root
+
+        root_dir = bound_graph_storage_root(kb_dir, storage.PROVIDER, root_dir)
         if root_dir is None:
             return {
                 "query": query,
