@@ -142,6 +142,7 @@ def test_lightrag_detail_and_reconciliation_keep_recorded_bound_version(catalog,
     assert metadata["indexed_embedding_model"] == "embed-a"
     assert metadata["current_embedding_model"] == ("changed-a" if drift else "embed-a")
     assert metadata["indexing_policy"]["label"] == "a"
+    assert metadata["indexed_version"] == "version-1"
 
 
 def test_lightrag_append_uses_policy_of_actual_bound_index(catalog, tmp_path, monkeypatch):

@@ -1462,6 +1462,8 @@ class KnowledgeBaseManager:
                 published_root_for_embedding(kb_dir, binding_signature) if dir_exists else None
             )
             indexing_policy = read_published_policy(published_root)
+            if published_root is not None:
+                metadata["indexed_version"] = published_root.name
             if indexing_policy is None:
                 pending = kb_config.get("pending_indexing_policy")
                 indexing_policy = (

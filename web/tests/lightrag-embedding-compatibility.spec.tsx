@@ -50,7 +50,9 @@ const kb: KnowledgeBase = {
   statistics: {
     rag_provider: "lightrag",
     raw_documents: 1,
-    index_versions: [{ version: "version-1", provider: "lightrag", ready: true }],
+    index_versions: [
+      { version: "version-1", provider: "lightrag", ready: true },
+    ],
   },
 };
 
@@ -67,8 +69,12 @@ it("omits mismatch warnings from list cards", () => {
       onSectionChange={vi.fn()}
     />,
   );
-  expect(screen.queryByText(/Restore the original configuration/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/Index embedding.*original-model/)).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Restore the original configuration/),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Index embedding.*original-model/),
+  ).not.toBeInTheDocument();
 });
 
 it("shows detail guidance while files and downloads remain accessible", async () => {
@@ -87,9 +93,15 @@ it("shows detail guidance while files and downloads remain accessible", async ()
       onClearHistory={vi.fn()}
     />,
   );
-  expect(screen.getByText(/Restore the original configuration/)).toBeInTheDocument();
-  expect(screen.getByText(/Index embedding.*original-model/)).toBeInTheDocument();
-  expect(screen.getByText(/Current embedding.*current-model/)).toBeInTheDocument();
+  expect(
+    screen.getByText(/Restore the original configuration/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/Index embedding.*original-model/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/Current embedding.*current-model/),
+  ).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(await screen.findByText("paper.txt"));
   expect(screen.getByRole("link", { name: "Download" })).toHaveAttribute(
@@ -99,24 +111,83 @@ it("shows detail guidance while files and downloads remain accessible", async ()
 });
 
 it("keeps version guidance visible alongside a failed rebuild", async () => {
-  await act(async () => { render(
-    <KbIndexVersionsSection
-      kb={{ ...kb, status: "error" }}
-      onReindex={vi.fn()}
-      onUpdatePendingIndexingPolicy={vi.fn()}
-    />,
-  ); });
-  expect(screen.getByText(/Restore the original configuration/)).toBeInTheDocument();
-  expect(screen.getByText(/Index embedding.*original-model/)).toBeInTheDocument();
-  expect(screen.getByText(/Current embedding.*current-model/)).toBeInTheDocument();
+  await act(async () => {
+    render(
+      <KbIndexVersionsSection
+        kb={{ ...kb, status: "error" }}
+        onReindex={vi.fn()}
+        onUpdatePendingIndexingPolicy={vi.fn()}
+      />,
+    );
+  });
+  expect(
+    screen.getByText(/Restore the original configuration/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/Index embedding.*original-model/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/Current embedding.*current-model/),
+  ).toBeInTheDocument();
 });
 
-it.each(["ready", "error"])("blocks incompatible appends in %s state and restores them", (status) => {
-  expect(kbCanUploadDocuments({ ...kb, status }, false)).toBe(false);
-  expect(
-    kbCanUploadDocuments(
-      { ...kb, status, metadata: { ...kb.metadata, embedding_mismatch: false } },
-      false,
-    ),
-  ).toBe(true);
+it("shows the recorded bound version rather than a newer unbound publication", async () => {
+  await act(async () => {
+    render(
+      <KbIndexVersionsSection
+        kb={{
+          ...kb,
+          metadata: {
+            ...kb.metadata,
+            embedding_selection: { profile_id: "p", model_id: "a" },
+            indexed_version: "version-1",
+          },
+          statistics: {
+            ...kb.statistics,
+            index_versions: [
+              {
+                version: "version-2",
+                provider: "lightrag",
+                ready: true,
+                indexing_policy: {
+                  policy: "pinned",
+                  descriptor: { model: "Newer model" },
+                },
+              },
+              {
+                version: "version-1",
+                provider: "lightrag",
+                ready: true,
+                indexing_policy: {
+                  policy: "pinned",
+                  descriptor: { model: "Bound model" },
+                },
+              },
+            ],
+          },
+        }}
+        onReindex={vi.fn()}
+        onUpdatePendingIndexingPolicy={vi.fn()}
+      />,
+    );
+  });
+  const source = screen.getByText("Version source").nextElementSibling;
+  expect(source).toHaveTextContent("version-1");
 });
+
+it.each(["ready", "error"])(
+  "blocks incompatible appends in %s state and restores them",
+  (status) => {
+    expect(kbCanUploadDocuments({ ...kb, status }, false)).toBe(false);
+    expect(
+      kbCanUploadDocuments(
+        {
+          ...kb,
+          status,
+          metadata: { ...kb.metadata, embedding_mismatch: false },
+        },
+        false,
+      ),
+    ).toBe(true);
+  },
+);
