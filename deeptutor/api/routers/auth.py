@@ -164,8 +164,13 @@ class SetRoleRequest(BaseModel):
     @field_validator("role")
     @classmethod
     def role_valid(cls, v: str) -> str:
-        if v not in ("admin", "user"):
-            raise ValueError("Role must be 'admin' or 'user'")
+        # Validate against the same whitelist the identity store enforces so
+        # the API layer and the storage layer share a single source of truth;
+        # a hardcoded subset here would 422 roles the store itself accepts.
+        from deeptutor.multi_user.models import VALID_ROLES
+
+        if v not in VALID_ROLES:
+            raise ValueError(f"Role must be one of {sorted(VALID_ROLES)}")
         return v
 
 
