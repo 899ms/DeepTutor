@@ -370,6 +370,14 @@ DEFAULT_LIGHTRAG_SERVER_SETTINGS: dict[str, Any] = {
 }
 
 IGNORE_PROCESS_OVERRIDES_ENV = "DEEPTUTOR_IGNORE_PROCESS_ENV_OVERRIDES"
+
+# Names of the variables a parent DeepTutor process rendered out of the settings
+# files, handed to its children so they can tell "our own launcher derived this
+# from system.json" from "an operator set this in the deployment". Without it the
+# launcher's export looks like a deployment override to the backend and the file
+# can never win again: toggling "check for updates" wrote system.json while the
+# live API kept answering with the value captured at startup (#1536).
+SETTINGS_DERIVED_ENV_KEYS = "DEEPTUTOR_SETTINGS_DERIVED_ENV_KEYS"
 TRUTHY = {"1", "true", "yes", "on"}
 FALSY = {"0", "false", "no", "off"}
 
@@ -450,6 +458,10 @@ class RuntimeSettingsService:
         self.process_env = process_env if process_env is not None else os.environ
         self._external_process_keys: set[str] = set()
         self._internal_exported_values: dict[str, str] = {}
+        derived = self.process_env.get(SETTINGS_DERIVED_ENV_KEYS, "") or ""
+        self._settings_derived_keys: frozenset[str] = frozenset(
+            part.strip() for part in derived.split(",") if part.strip()
+        )
 
     @classmethod
     def get_instance(
@@ -719,8 +731,14 @@ class RuntimeSettingsService:
     def export_environment(self, *, overwrite: bool = True) -> dict[str, str]:
         env = self.render_environment()
         for key, value in env.items():
-            current = os.environ.get(key)
-            if current and self._internal_exported_values.get(key) != current:
+            # Read through the same view the override policy reads, so "the
+            # operator set this" means one thing in both places.
+            current = self.process_env.get(key)
+            if (
+                current
+                and key not in self._settings_derived_keys
+                and self._internal_exported_values.get(key) != current
+            ):
                 self._external_process_keys.add(key)
             if overwrite or key not in os.environ:
                 os.environ[key] = value
@@ -728,8 +746,23 @@ class RuntimeSettingsService:
                     self._internal_exported_values[key] = value
         return env
 
+    def settings_derived_keys(self) -> frozenset[str]:
+        """Variables this process exported out of the settings files.
+
+        What a child needs in order to read its inherited environment correctly
+        (see :data:`SETTINGS_DERIVED_ENV_KEYS`). Anything the operator had
+        already set is excluded: there the environment is the authority and the
+        child must keep honouring it, exactly as this process does.
+        """
+        return frozenset(self._internal_exported_values)
+
     def _process_env_value(self, key: str) -> str:
         if self._ignore_process_overrides():
+            return ""
+        if key in self._settings_derived_keys:
+            # A parent DeepTutor process rendered this out of the settings files,
+            # so the files stay in charge and a later save takes effect live
+            # (#1536). An operator-set variable is never on that list.
             return ""
         value = self.process_env.get(key, "")
         if not value:
@@ -1455,6 +1488,7 @@ __all__ = [
     "LITEPARSE_IMAGE_MODES",
     "MINERU_MODE_CLOUD",
     "MINERU_MODE_LOCAL",
+    "SETTINGS_DERIVED_ENV_KEYS",
     "ChatAttachmentLimits",
     "RuntimeSettingsService",
     "compute_ws_max_size",

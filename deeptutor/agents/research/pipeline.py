@@ -90,7 +90,11 @@ from deeptutor.runtime.registry.tool_registry import get_tool_registry
 from deeptutor.runtime.stream_bus import StreamBus
 from deeptutor.services.config import parse_language
 from deeptutor.services.config.loader import get_capability_params
-from deeptutor.services.llm import get_llm_config, prepare_multimodal_messages
+from deeptutor.services.llm import (
+    finish_was_truncated,
+    get_llm_config,
+    prepare_multimodal_messages,
+)
 from deeptutor.services.llm.structured_retry import payload_with_reasoning_retry
 from deeptutor.services.prompt import get_prompt_manager
 from deeptutor.services.prompt.language import append_language_directive
@@ -2341,7 +2345,7 @@ def _report_step_incomplete_reason(
     if step.stream_idle_timeout:
         return "provider stream went idle before an explicit finish"
     finish_reason = (step.finish_reason or "").strip().lower()
-    if finish_reason in {"length", "max_tokens", "max_output_tokens"}:
+    if finish_was_truncated(finish_reason):
         return f"provider stopped at its output limit ({finish_reason})"
     if len(body) < 80:
         return f"body is too short ({len(body)} characters)"

@@ -49,6 +49,8 @@
 
 ### 📦 Releases
 
+> **[2026.9.22]** [v1.6.10](https://github.com/HKUDS/DeepTutor/releases/tag/v1.6.10) — Native LightRAG role models, a published index that records and enforces what built it, PDF attachments that follow your parsing engine, visible truncation, and unfiltered provider choices.
+
 > **[2026.9.21]** [v1.6.9](https://github.com/HKUDS/DeepTutor/releases/tag/v1.6.9) — Folder-based learning workspaces, daily practice, redesigned Settings, clearer streaming conversations, persistent usage accounting, and recoverable archives with explicit permanent deletion.
 
 <details>
@@ -212,7 +214,7 @@
 
 </details>
 
-> ✨ **v1.6.9 is live.** `pip install -U deeptutor` picks up the latest stable release.
+> ✨ **v1.6.10 is live.** `pip install -U deeptutor` picks up the latest stable release.
 
 ### 📰 News
 

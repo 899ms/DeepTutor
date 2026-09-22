@@ -3429,3 +3429,44 @@ async def test_native_adapter_tool_argument_previews_reach_the_card(
         if isinstance(event.metadata.get("ask_user_draft"), dict)
     }
     assert call_ids == {"ask-1"}
+
+
+@pytest.mark.asyncio
+async def test_truncated_tool_call_says_the_output_hit_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reader must learn the round was cut off, not just that an arg is missing.
+
+    Visualize's canvas came back empty with nothing on screen explaining why: a
+    reasoning model spent the round's budget on ``<think>`` and the tool call's
+    JSON stopped mid-argument, so the only trace row was the arg guard's
+    "missing query" — which reads as a model that forgot a field (#1546).
+    """
+    client = _ScriptedChatClient(
+        [
+            [
+                _llm_chunk(
+                    content="<think>先想清楚画什么</think>",
+                    tool_calls=[{"id": "a", "name": "web_search", "arguments": '{"que'}],
+                    finish_reason="length",
+                )
+            ],
+            [_llm_chunk(content="答案", finish_reason="stop")],
+        ]
+    )
+    pipeline = AgenticChatPipeline(language="zh")
+    pipeline.registry = _Registry()
+    monkeypatch.setattr(pipeline, "_compose_enabled_tools", lambda _context: ["web_search"])
+    monkeypatch.setattr(pipeline, "_build_openai_client", lambda: client)
+
+    events = await _run(pipeline, UnifiedContext(session_id="s1", user_message="画一张图"))
+
+    warnings = [
+        str(event.content)
+        for event in events
+        if (event.metadata or {}).get("trace_kind") == "warning"
+    ]
+    assert any("输出 token 上限" in text for text in warnings)
+    # The notice is a report, not a control-flow change: the round is handled
+    # exactly as before and the turn still finishes.
+    assert _answer_text(events) == "答案"

@@ -144,6 +144,15 @@ def role_environment(tmp_path, monkeypatch):
         "deeptutor.services.embedding.get_embedding_config",
         lambda: scoped_embedding_config() or state["embedding"],
     )
+    # The knowledge routes resolve a *selected* embedding through the module
+    # binding, not the package-level zero-arg alias above, and the selection
+    # itself comes from the real catalog. Patching only the alias left the route
+    # reading whatever embedding the developer has configured and scoping it for
+    # everything downstream, so this fixture's default never reached it.
+    monkeypatch.setattr(
+        "deeptutor.services.embedding.config.get_embedding_config",
+        lambda selection=None, **_kwargs: state["embedding"],
+    )
     yield state
     reset_current_user(token)
 

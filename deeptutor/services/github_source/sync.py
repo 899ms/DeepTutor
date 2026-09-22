@@ -75,6 +75,37 @@ def _record_sync_failure(kb_name: str, source: dict, base_dir: str, error: str) 
         logger.warning("Could not persist GitHub sync failure status for '%s'", kb_name)
 
 
+def _record_sync_success(
+    kb_name: str,
+    source: dict,
+    base_dir: str,
+    *,
+    sha: str,
+    files_synced: int | None = None,
+) -> None:
+    """Persist "GitHub was checked and the source is current".
+
+    A same-SHA check is a successful sync that had nothing to transfer, so it
+    owes the same freshness stamp as one that did: without it the hourly
+    service read the source as stale forever and re-queried GitHub every
+    cycle, and an error left by an earlier transient failure stayed on the
+    source after a later check had confirmed it current (#1489). ``files_synced``
+    is omitted on that path so the last real transfer's count survives.
+    """
+    from deeptutor.knowledge.manager import KnowledgeBaseManager
+
+    fields: dict = {} if files_synced is None else {"files_synced": files_synced}
+    KnowledgeBaseManager(base_dir=base_dir).update_github_source_state(
+        kb_name=kb_name,
+        source_id=source["id"],
+        last_synced_sha=sha,
+        last_synced_at=_utcnow_iso(),
+        last_sync_status="success",
+        last_sync_error=None,
+        **fields,
+    )
+
+
 def _is_markdown(path: str) -> bool:
     return path.lower().endswith(MARKDOWN_EXTENSIONS)
 
@@ -181,6 +212,7 @@ async def sync_source(kb_name, source, *, base_dir=DEFAULT_BASE_DIR, client=None
         return SyncResult(ok=False, error=error)
 
     if old_sha and old_sha == latest_sha:
+        _record_sync_success(kb_name, source, base_dir, sha=latest_sha)
         return SyncResult(ok=True, skipped=True)
 
     try:
@@ -224,16 +256,11 @@ async def sync_source(kb_name, source, *, base_dir=DEFAULT_BASE_DIR, client=None
         _record_sync_failure(kb_name, source, base_dir, result.error)
         return result
 
-    from deeptutor.knowledge.manager import KnowledgeBaseManager
-
-    manager = KnowledgeBaseManager(base_dir=base_dir)
-    manager.update_github_source_state(
-        kb_name=kb_name,
-        source_id=source["id"],
-        last_synced_sha=latest_sha,
-        last_synced_at=_utcnow_iso(),
-        last_sync_status="success",
-        last_sync_error=None,
+    _record_sync_success(
+        kb_name,
+        source,
+        base_dir,
+        sha=latest_sha,
         files_synced=result.files_added + result.files_updated,
     )
     return result

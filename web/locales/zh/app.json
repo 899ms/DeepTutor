@@ -4340,7 +4340,6 @@
   "Search APIs use an engine configuration rather than a model ID or context window.": "搜索 API 配置的是搜索引擎，无需填写 Model ID 或上下文窗口。",
   "Search by model or provider": "搜索模型或提供方名称",
   "Search by name": "搜索名称",
-  "Search uses providers with a supported search API. A language model listing alone does not confirm search support.": "搜索需要提供方支持相应的搜索 API；仅能获取语言模型列表，不代表支持搜索。",
   "Select a model to view its settings and connection test.": "选择一个模型，查看并编辑参数、测试连接。",
   "Select a provider to edit its connection. Models are managed on their own pages.": "选择提供方编辑连接信息。具体模型在各类模型页面中管理。",
   "Send dimensions in embedding requests": "在嵌入请求中发送维度参数",
@@ -4386,7 +4385,12 @@
   "Multimodal generation": "多模态生成",
   "Manage speech synthesis and transcription models using saved providers.": "使用已配置的提供方管理语音合成与语音识别模型。",
   "Manage image and video generation models using saved providers.": "使用已配置的提供方管理图片与视频生成模型。",
-  "Only providers with a supported API for this model type are listed. A provider offering a model does not mean its API is integrated here.": "仅显示已适配此类模型 API 的提供方。提供方拥有某个模型，并不代表这里已接入对应的 API。",
+  "Every provider is selectable. One with no adapter on record for this model type is called as an OpenAI-compatible endpoint derived from its provider URL — add the model, then run the model test to see whether it answers.": "所有提供方都可以选。尚未登记此类模型适配的提供方，会按 OpenAI 兼容接口调用——端点由提供方 URL 推导。先添加模型，再运行模型测试看它能不能应答。",
+  "Every provider is selectable. Search has no generic adapter, so a provider without a search API of its own is rejected by the search test — that is where a wrong pick shows up.": "所有提供方都可以选。搜索没有通用适配器，选了本身不提供搜索 API 的提供方，会被搜索测试直接判错——选错了会在那里显示出来。",
+  "No adapter for this model type is on record for this provider. DeepTutor calls it as an OpenAI-compatible endpoint derived from the provider URL; run the model test below to confirm it answers.": "这个提供方尚未登记此类模型的适配。DeepTutor 会把它当作 OpenAI 兼容接口调用，端点由提供方 URL 推导；用下方的模型测试确认它能否应答。",
+  "No search adapter is on record for this provider, and search has no OpenAI-compatible fallback. Run the test below — it will say so rather than search with the wrong engine.": "这个提供方尚未登记搜索适配，而搜索没有 OpenAI 兼容的兜底路径。运行下方的测试——它会直接报错，而不是拿错引擎去搜。",
+  "Supported for this model type": "已适配此类模型",
+  "Not on record — verify with the model test": "未登记 — 请用模型测试验证",
   "Detected describes model modalities, not API compatibility. Provider support indicates an available integration; test a specific model to verify your account access.": "“已检测”表示模型的输入输出模态，不代表 API 兼容。“提供方支持”表示已有对应适配；请测试具体模型以验证账号访问权限。",
   "After applying changes, lower limits take effect immediately. Raising limits needs a backend restart so larger uploads fit through the WebSocket transport.": "应用更改后，调低上限会立即生效；调高上限需要重启后端，以便 WebSocket 接收更大的上传内容。",
   "Enter a model ID before applying changes.": "请先填写模型 ID，再应用更改。",
@@ -4998,5 +5002,7 @@
   "{{count}} KBs": "{{count}} 个知识库",
   "{{count}} MCP tools": "{{count}} 个 MCP 工具",
   "{{count}} partners": "{{count}} 个伙伴",
-  "{{count}} skills": "{{count}} 个技能"
+  "{{count}} skills": "{{count}} 个技能",
+  "SVG / chart / diagram generation loop.": "SVG / 图表 / 图示生成流程。",
+  "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.": "推理模型可能把其中大部分用于内部推理；如果画布返回为空，请提高该上限。"
 }
