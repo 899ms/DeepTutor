@@ -61,10 +61,11 @@ def test_judge_speaks_every_language_it_advertises() -> None:
 
 
 def test_web_locale_covers_every_english_key() -> None:
-    """A missing key renders as the raw key, not as English."""
+    """Cover English keys plus Ukrainian's extra few/many plural forms."""
     en = json.loads((WEB / "locales/en/app.json").read_text(encoding="utf-8"))
     uk = json.loads((WEB / "locales/uk/app.json").read_text(encoding="utf-8"))
-    assert set(uk) == set(en)
+    assert set(en) <= set(uk)
+    assert all(key.endswith(("_few", "_many")) for key in set(uk) - set(en))
 
 
 def test_web_locale_keeps_interpolation_placeholders() -> None:

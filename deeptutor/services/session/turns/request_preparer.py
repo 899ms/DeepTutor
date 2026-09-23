@@ -1038,7 +1038,8 @@ class TurnRequestPreparer:
             if last_message is not None and last_message.get("role") == "assistant"
             else None
         )
+        if replace_assistant_message_id is None:
+            return await self.start_turn(payload)
         return await self.start_turn(
-            payload,
-            replace_assistant_message_id=replace_assistant_message_id,
+            payload, replace_assistant_message_id=replace_assistant_message_id
         )
