@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import type { TaskState } from "@/hooks/useKnowledgeProgress";
 import {
   formatKnowledgeTimestamp,
+  knowledgeBaseRef,
   resolveProgressPercent,
   type KnowledgeBase,
 } from "@/lib/knowledge-helpers";
@@ -39,6 +40,7 @@ export default function KbLinkedFoldersSection({
   onSyncFolder,
 }: KbLinkedFoldersSectionProps) {
   const { t } = useTranslation();
+  const kbRef = knowledgeBaseRef(kb);
   const [folders, setFolders] = useState<LinkedFolderInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export default function KbLinkedFoldersSection({
     setLoadError(null);
     setError(null);
     try {
-      const result = await listLinkedFolders(kb.name, {
+      const result = await listLinkedFolders(kbRef, {
         signal: controller.signal,
       });
       setFolders(result);
@@ -79,7 +81,7 @@ export default function KbLinkedFoldersSection({
       window.clearTimeout(timeout);
       setLoading(false);
     }
-  }, [kb.name, t]);
+  }, [kbRef, t]);
 
   useEffect(() => {
     void refresh();

@@ -167,24 +167,6 @@ export default function KbDocumentsSection({
     }
   };
 
-  const percent = resolveProgressPercent(kb.progress);
-  const showTaskLogs =
-    task?.kind === "upload" ||
-    task?.kind === "sync" ||
-    task?.kind === "create" ||
-    task?.kind === "reindex" ||
-    task?.kind === "retry";
-  const taskLogTitle =
-    task?.kind === "create"
-      ? t("Create Process")
-      : task?.kind === "retry"
-        ? t("Retry Process")
-        : task?.kind === "reindex"
-          ? t("Re-index Process")
-          : task?.kind === "sync"
-            ? t("Sync Process")
-            : t("Upload Process");
-
   return (
     <div className="space-y-5">
       <div>

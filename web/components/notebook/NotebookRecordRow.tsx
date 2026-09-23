@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import Tooltip from "@/components/common/Tooltip";
 import NotebookRecordActions from "@/components/notebook/NotebookRecordActions";
 import { notify } from "@/lib/notifications";
 import type { NotebookRecordItem, NotebookSummary } from "@/lib/notebook-api";
@@ -255,11 +254,11 @@ export default function NotebookRecordRow({
           {timestamp}
         </span>
 
-        <Tooltip label={t("Edit record")} side="bottom">
           <button
             type="button"
             disabled={busy}
             aria-label={t("Edit record")}
+            title={t("Edit record")}
             onClick={() => {
               if (!expanded) onToggle();
               startEditing();
@@ -268,7 +267,6 @@ export default function NotebookRecordRow({
           >
             <Pencil size={14} />
           </button>
-        </Tooltip>
 
         <NotebookRecordActions
           targets={moveTargets}

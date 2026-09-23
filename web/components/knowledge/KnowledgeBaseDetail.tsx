@@ -48,7 +48,6 @@ import KbSettingsSection from "./KbSettingsSection";
 import KbGitHubSourcesSection from "./KbGitHubSourcesSection";
 import KbLinkedFoldersSection from "./KbLinkedFoldersSection";
 import KbWebSourcesSection from "./KbWebSourcesSection";
-import KbLinkedFoldersSection from "./KbLinkedFoldersSection";
 import KbMarginNoteDevicesSection from "./KbMarginNoteDevicesSection";
 import KnowledgeEngineIcon, {
   knowledgeSourceIconId,
@@ -327,14 +326,14 @@ export default function KnowledgeBaseDetail({
               )}
               {activeSection === "folders" && (
                 <KbLinkedFoldersSection
-                  key={kb.name}
+                  key={knowledgeBaseRef(kb)}
                   kb={kb}
                   task={task}
                   onLinkFolder={async (folderPath) => {
-                    await onLinkFolder(kb.name, folderPath);
+                    await onLinkFolder(knowledgeBaseRef(kb), folderPath);
                   }}
-                  onUnlinkFolder={(folderId) => onUnlinkFolder(kb.name, folderId)}
-                  onSyncFolder={(folderId) => onSyncFolder(kb.name, folderId)}
+                  onUnlinkFolder={(folderId) => onUnlinkFolder(knowledgeBaseRef(kb), folderId)}
+                  onSyncFolder={(folderId) => onSyncFolder(knowledgeBaseRef(kb), folderId)}
                 />
               )}
               {activeSection === "versions" && (
@@ -358,13 +357,6 @@ export default function KnowledgeBaseDetail({
               )}
               {activeSection === "github" && (
                 <KbGitHubSourcesSection kbName={knowledgeBaseRef(kb)} />
-              )}
-              {activeSection === "folders" && (
-                <KbLinkedFoldersSection
-                  key={kb.name}
-                  kbName={kb.name}
-                  readOnly={kb.read_only === true}
-                />
               )}
               {activeSection === "web" && (
                 <KbWebSourcesSection kbName={knowledgeBaseRef(kb)} />

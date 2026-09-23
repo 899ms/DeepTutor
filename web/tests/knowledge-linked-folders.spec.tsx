@@ -39,6 +39,22 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+it("loads linked folders with the qualified workspace KB reference", async () => {
+  const qualified = "workspace:course-1:kb:papers";
+  render(
+    <KbLinkedFoldersSection
+      kb={{ ...kb, id: qualified }}
+      onLinkFolder={vi.fn()}
+      onUnlinkFolder={vi.fn()}
+      onSyncFolder={vi.fn()}
+    />,
+  );
+
+  await waitFor(() =>
+    expect(fixture.list).toHaveBeenCalledWith(qualified, expect.any(Object)),
+  );
+});
+
 it("links a folder without automatically starting its first sync", async () => {
   const onLinkFolder = vi.fn().mockResolvedValue(undefined);
   const onUnlinkFolder = vi.fn().mockResolvedValue(undefined);

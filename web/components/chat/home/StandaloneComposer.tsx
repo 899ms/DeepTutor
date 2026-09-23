@@ -29,7 +29,6 @@ import ChatComposer from "@/components/chat/home/ChatComposer";
 import type { ContextBudget } from "@/components/chat/home/ContextBudgetChip";
 import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import type { CapabilityDef } from "@/features/capabilities/presentation";
-import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
 import type { SelectedQuestionEntry } from "@/components/chat/QuestionBankPicker";
@@ -910,9 +909,6 @@ function StandaloneComposerImpl({
         onResourceSelectionChange={onResourceSelectionChange}
         personaSelectorOpen={personaSelectorOpen}
         onPersonaSelectorOpenChange={setPersonaSelectorOpen}
-        resourceCatalog={resourceCatalog}
-        resourceSelection={resourceSelection}
-        onResourceSelectionChange={onResourceSelectionChange}
         llmOptions={llmOptions}
         activeLLMDefault={activeLLMDefault}
         llmSelection={llmSelection}

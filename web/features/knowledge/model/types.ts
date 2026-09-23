@@ -24,7 +24,6 @@ export type {
   LightRagServerProbe,
   LinkedFolderInfo,
   LinkedFolderProbe,
-  LinkedFolderInfo,
   LlamaIndexConfig,
   ModelKindOptions,
   ModelOption,

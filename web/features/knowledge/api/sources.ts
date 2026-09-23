@@ -16,7 +16,6 @@ export {
 export type {
   AddGitHubSourcePayload,
   AddWebSourcePayload,
-  FolderSyncResult,
   GitHubSource,
   GitHubSyncResult,
   LinkedFolderInfo,

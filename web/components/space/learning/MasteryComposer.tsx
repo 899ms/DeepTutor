@@ -69,8 +69,6 @@ export function MasteryComposer({
   const resourceCatalog = useComposerResources(state.workspaceId, workspaces);
   // Pins the turn to the tutor loop; returns no capabilities to offer.
   useWorkspaceChatActions({ pinnedCapability: MASTERY_CAPABILITY_VALUE });
-  const { workspaces } = useChatWorkspaces();
-  const resourceCatalog = useComposerResources(state.workspaceId, workspaces);
   const contextBudget = useContextBudget(state.messages);
   const { t } = useTranslation();
 

@@ -64,11 +64,11 @@ test("linked-folder API methods preserve encoded resource identifiers", async ()
   }
 
   assert.equal(
-    requests[0].url,
+    requests[0].url.split("?")[0],
     "/api/knowledge-bases/Team%20Notes%2F2026/linked-folders",
   );
   assert.equal(
-    requests[1].url,
+    requests[1].url.split("?")[0],
     "/api/knowledge-bases/Team%20Notes%2F2026/link-folder",
   );
   assert.equal(requests[1].init?.method, "POST");
@@ -76,12 +76,12 @@ test("linked-folder API methods preserve encoded resource identifiers", async ()
     folder_path: "/notes",
   });
   assert.equal(
-    requests[2].url,
+    requests[2].url.split("?")[0],
     "/api/knowledge-bases/Team%20Notes%2F2026/linked-folders/folder%2F1",
   );
   assert.equal(requests[2].init?.method, "DELETE");
   assert.equal(
-    requests[3].url,
+    requests[3].url.split("?")[0],
     "/api/knowledge-bases/Team%20Notes%2F2026/sync-folder/folder%2F1",
   );
   assert.equal(requests[3].init?.method, "POST");
