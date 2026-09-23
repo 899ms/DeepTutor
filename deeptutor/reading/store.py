@@ -328,7 +328,9 @@ class ReadingStore:
                             "bytes": len(item.data),
                         }
                     )
-                _atomic_write(stage_dir / MEDIA_INDEX_NAME, json.dumps(media_rows, ensure_ascii=False))
+                _atomic_write(
+                    stage_dir / MEDIA_INDEX_NAME, json.dumps(media_rows, ensure_ascii=False)
+                )
 
             if extraction.render_mode != "text":
                 raw_dir = stage_dir / RAW_DIR
@@ -558,9 +560,7 @@ class ReadingStore:
             for state_dir in (ANNOTATIONS_DIR, POSITIONS_DIR, BOOKMARKS_DIR, REVISIONS_DIR):
                 source_state_dir = material_dir / state_dir
                 if source_state_dir.is_dir():
-                    shutil.copytree(
-                        source_state_dir, stage_dir / state_dir, dirs_exist_ok=True
-                    )
+                    shutil.copytree(source_state_dir, stage_dir / state_dir, dirs_exist_ok=True)
             for state_name in (ANNOTATIONS_NAME, POSITION_NAME):
                 source_state = material_dir / state_name
                 if source_state.is_file():
@@ -956,9 +956,7 @@ class ReadingStore:
         path = self._dir(material_id) / MEDIA_DIR / clean
         return path if path.is_file() else None
 
-    def update_media_captions(
-        self, material_id: str, captions: Mapping[str, str]
-    ) -> int:
+    def update_media_captions(self, material_id: str, captions: Mapping[str, str]) -> int:
         """Write per-image captions into the media index. Returns rows changed.
 
         *captions* maps an image name to its text. Names absent from the index
@@ -991,6 +989,7 @@ class ReadingStore:
             if changed:
                 _atomic_write(index_path, json.dumps(rows, ensure_ascii=False))
             return changed
+
     def render_path(self, material_id: str) -> Path | None:
         """Browser-ready EPUB archive; original bytes for all other formats."""
         manifest = self.manifest(material_id)
