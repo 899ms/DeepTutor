@@ -12,6 +12,7 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from deeptutor.learning.storage import LearningStore
 from deeptutor.multi_user.learning_access import (
     allowed_reading_extensions,
     assert_learning_material,
@@ -91,6 +92,23 @@ def _discard_late_worker_result(worker: asyncio.Future) -> None:
             value.close()
     except Exception:
         logger.exception("Reading extension worker failed after its request ended")
+
+
+def _record_reading_activity(
+    material_id: str,
+    *,
+    extension_id: str,
+    action: str,
+    locator: int,
+    result_type: str,
+) -> None:
+    LearningStore().record_reading_activity(
+        material_id,
+        extension_id=extension_id,
+        action=action,
+        locator=locator,
+        result_type=result_type,
+    )
 
 
 @router.get("/extensions")
@@ -187,7 +205,6 @@ async def run_extension_action(
         quiz_payload = dumped.get("payload")
         if dumped.get("type") == "quiz" and isinstance(quiz_payload, dict):
             await _persist_reading_quiz_pending(material_id, payload.locator, quiz_payload)
-        return dumped
     except TimeoutError as exc:
         logger.warning("Reading extension %s action %s timed out", extension_id, action)
         raise HTTPException(
@@ -219,6 +236,16 @@ async def run_extension_action(
             registry.mark_timed_out(extension_id)
             worker.add_done_callback(_discard_late_worker_result)
         registry.finish_action(extension_id)
+
+    await asyncio.to_thread(
+        _record_reading_activity,
+        material_id,
+        extension_id=extension_id,
+        action=action,
+        locator=payload.locator,
+        result_type=result.type,
+    )
+    return dumped
 
 
 def _choice_map(choices: list[Any]) -> dict[str, str]:
