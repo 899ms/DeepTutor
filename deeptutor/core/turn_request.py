@@ -169,7 +169,9 @@ class TurnRequest(BaseModel):
     course_id: str | None = None
     persist_user_message: bool = True
     regenerate: bool = False
-    regenerated_from_message_id: int | None = None
+    # SQLite message rowids are integers; PocketBase message record ids are
+    # opaque strings. Preserve either form in the SESSION event for clients.
+    regenerated_from_message_id: int | str | None = None
     superseded_turn_id: str | None = None
     followup_question_context: dict[str, Any] | None = None
     selection_tutor_context: dict[str, Any] | None = None

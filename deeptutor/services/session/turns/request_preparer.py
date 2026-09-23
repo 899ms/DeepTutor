@@ -42,6 +42,41 @@ if TYPE_CHECKING:
     from deeptutor.services.session.protocol import SessionStoreProtocol
 
 
+# Request snapshots use the browser's display keys. Only these saved turn
+# inputs are restored by Resend; runtime bookkeeping and message identity are
+# always assembled from the persisted message and current session instead.
+_REPLAY_SNAPSHOT_FIELDS: dict[str, str] = {
+    "capability": "capability",
+    "tools": "enabledTools",
+    "knowledge_bases": "knowledgeBases",
+    "language": "language",
+    "config": "config",
+    "notebook_references": "notebookReferences",
+    "history_references": "historyReferences",
+    "partner_group_references": "partnerGroupReferences",
+    "question_notebook_references": "questionNotebookReferences",
+    "book_references": "bookReferences",
+    "reading_references": "readingReferences",
+    "memory_references": "memoryReferences",
+    "skills": "skills",
+    "mcp": "mcp",
+    "persona": "persona",
+    "llm_selection": "llmSelection",
+    "workspace_mode": "workspaceMode",
+    "workspace_id": "workspaceId",
+    "course_id": "courseId",
+    "mastery_path_id": "masteryPathId",
+    "mastery_session_mode": "masterySessionMode",
+    "reading_material_id": "readingMaterialId",
+    "reading_material_revision": "readingMaterialRevision",
+    "reading_workspace_id": "readingWorkspaceId",
+    "timed_media_id": "timedMediaId",
+    "consult_partner_id": "consultPartnerId",
+    "partner_discussion_group_id": "partnerDiscussionGroupId",
+    "auto_route": "autoRoute",
+}
+
+
 class TurnRequestPreparer:
     if TYPE_CHECKING:
         store: SessionStoreProtocol
@@ -759,6 +794,11 @@ class TurnRequestPreparer:
         turn with ``persist_user_message=False`` and ``regenerate=True`` so
         the runtime knows not to duplicate the user row or refresh long-term
         memory a second time. The original user message stays in place.
+
+        ``overrides.replay_snapshot`` opts into restoring the saved per-turn
+        request for a persisted failed-turn Resend. Without it, Regenerate
+        retains its session-preference behavior. Explicit overrides win over
+        saved fields, including empty lists and strings.
         """
         session_id = str(session_id or "").strip()
         if not session_id:
@@ -786,7 +826,8 @@ class TurnRequestPreparer:
                     break
 
         preferences = session.get("preferences") or {}
-        overrides = overrides or {}
+        overrides = dict(overrides or {})
+        replay_snapshot = overrides.pop("replay_snapshot", False) is True
         snapshot = {}
         metadata = last_user.get("metadata") or {}
         if isinstance(metadata, dict):
@@ -941,12 +982,24 @@ class TurnRequestPreparer:
             **consultation_fields,
             "persist_user_message": False,
             "regenerate": True,
-            "regenerated_from_message_id": int(last_user["id"]),
+            "regenerated_from_message_id": last_user["id"],
         }
         if previous_turn_id:
             payload["superseded_turn_id"] = previous_turn_id
         if llm_selection:
             payload["llm_selection"] = llm_selection
+
+        if replay_snapshot:
+            # The ordinary Regenerate path intentionally uses current session
+            # preferences for many fields. Resend instead repeats the failed
+            # message's saved request. Keys absent from an older snapshot keep
+            # the legacy fallback, while explicit overrides always take
+            # precedence, even when they clear a field.
+            for field, snapshot_key in _REPLAY_SNAPSHOT_FIELDS.items():
+                if field in overrides:
+                    payload[field] = overrides[field]
+                elif snapshot_key in snapshot:
+                    payload[field] = snapshot[snapshot_key]
 
         # Validate the complete replay request before removing the answer it
         # supersedes. A malformed stored snapshot or override must leave the

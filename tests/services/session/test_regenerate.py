@@ -205,8 +205,9 @@ class TestRegenerateLastTurn:
         assert [m["id"] for m in remaining] == [user_id]
         assert assistant_id is not None and assistant_id not in {m["id"] for m in remaining}
 
+    @pytest.mark.parametrize("replay_snapshot", [False, True])
     def test_replays_rich_attachment_payload_without_breaking_turn_request(
-        self, store: SQLiteSessionStore
+        self, store: SQLiteSessionStore, replay_snapshot: bool
     ) -> None:
         """A turn whose persisted attachment carries the rich fields stored at
         upload (id, extracted_chars, extracted_text) must still produce a
@@ -244,7 +245,12 @@ class TestRegenerateLastTurn:
         runtime = TurnRuntimeManager(store=store)
         recorder = _FakeStartTurnRecorder()
         with patch.object(runtime, "start_turn", new=recorder):
-            asyncio.run(runtime.regenerate_last_turn(sid))
+            asyncio.run(
+                runtime.regenerate_last_turn(
+                    sid,
+                    overrides={"replay_snapshot": True} if replay_snapshot else None,
+                )
+            )
 
         from deeptutor.core.turn_request import TurnRequest
 
@@ -262,6 +268,155 @@ class TestRegenerateLastTurn:
                 "id": "att-1",
             }
         ]
+
+    @pytest.mark.parametrize("replay_snapshot", [False, True])
+    def test_saved_request_is_opt_in_and_explicit_clears_win(
+        self, store: SQLiteSessionStore, replay_snapshot: bool
+    ) -> None:
+        snapshot = {
+            "capability": "deep_solve",
+            "enabledTools": ["web_search"],
+            "knowledgeBases": ["old-kb"],
+            "language": "zh",
+            "config": {"steps": 3},
+            "notebookReferences": [{"notebook_id": "notebook-1", "record_ids": ["r1"]}],
+            "historyReferences": ["earlier-session"],
+            "partnerGroupReferences": [{"group_id": "group-1", "session_key": "s1"}],
+            "questionNotebookReferences": [42],
+            "bookReferences": [{"book_id": "book-1", "page_ids": ["p1"]}],
+            "readingReferences": [
+                {"material_id": "0123456789abcdef", "revision": 2, "locators": [1]}
+            ],
+            "memoryReferences": ["summary"],
+            "skills": [],
+            "mcp": ["server-1"],
+            "persona": "",
+            "llmSelection": {"profile_id": "old-profile", "model_id": "old-model"},
+            "workspaceMode": "",
+            "courseId": "",
+            "masteryPathId": "",
+            "masterySessionMode": "study",
+            "autoRoute": False,
+        }
+        sid, _, _ = _seed_session(store, user_metadata={"request_snapshot": snapshot})
+        asyncio.run(
+            store.update_session_preferences(
+                sid,
+                {
+                    "capability": "chat",
+                    "tools": ["brainstorm"],
+                    "knowledge_bases": ["new-kb"],
+                    "language": "en",
+                    "skills": ["current-skill"],
+                    "mcp": [],
+                    "persona": "current-persona",
+                },
+            )
+        )
+        runtime = TurnRuntimeManager(store=store)
+        recorder = _FakeStartTurnRecorder()
+        overrides = {"replay_snapshot": True} if replay_snapshot else None
+        with patch.object(runtime, "start_turn", new=recorder):
+            asyncio.run(runtime.regenerate_last_turn(sid, overrides=overrides))
+
+        payload = recorder.calls[0]
+        assert "replay_snapshot" not in payload
+        if not replay_snapshot:
+            assert payload["capability"] == "chat"
+            assert payload["tools"] == ["brainstorm"]
+            assert payload["knowledge_bases"] == ["new-kb"]
+            assert payload["language"] == "en"
+            assert payload["config"] == {}
+            assert "persona" not in payload
+            return
+
+        assert payload["capability"] == "deep_solve"
+        assert payload["tools"] == ["web_search"]
+        assert payload["knowledge_bases"] == ["old-kb"]
+        assert payload["language"] == "zh"
+        assert payload["config"] == {"steps": 3}
+        assert payload["notebook_references"] == snapshot["notebookReferences"]
+        assert payload["history_references"] == snapshot["historyReferences"]
+        assert payload["partner_group_references"] == snapshot["partnerGroupReferences"]
+        assert payload["question_notebook_references"] == [42]
+        assert payload["book_references"] == snapshot["bookReferences"]
+        assert payload["reading_references"] == snapshot["readingReferences"]
+        assert payload["memory_references"] == ["summary"]
+        assert payload["skills"] == []
+        assert payload["mcp"] == ["server-1"]
+        assert payload["persona"] == ""
+        assert payload["llm_selection"] == snapshot["llmSelection"]
+        assert payload["workspace_mode"] == ""
+        assert payload["course_id"] == ""
+        assert payload["mastery_path_id"] == ""
+        assert payload["mastery_session_mode"] == "study"
+        assert payload["auto_route"] is False
+
+    def test_resend_overrides_saved_fields_including_empty_values(
+        self, store: SQLiteSessionStore
+    ) -> None:
+        sid, _, _ = _seed_session(
+            store,
+            user_metadata={
+                "request_snapshot": {
+                    "enabledTools": ["web_search"],
+                    "knowledgeBases": ["old-kb"],
+                    "language": "zh",
+                    "config": {"steps": 3},
+                    "memoryReferences": ["summary"],
+                    "persona": "socratic",
+                    "llmSelection": {"profile_id": "old-profile", "model_id": "old-model"},
+                }
+            },
+        )
+        runtime = TurnRuntimeManager(store=store)
+        recorder = _FakeStartTurnRecorder()
+        with patch.object(runtime, "start_turn", new=recorder):
+            asyncio.run(
+                runtime.regenerate_last_turn(
+                    sid,
+                    overrides={
+                        "replay_snapshot": True,
+                        "tools": [],
+                        "knowledge_bases": [],
+                        "language": "fr",
+                        "config": {},
+                        "memory_references": [],
+                        "persona": "",
+                        "llm_selection": {"profile_id": "new-profile", "model_id": "new-model"},
+                    },
+                )
+            )
+        payload = recorder.calls[0]
+        assert payload["tools"] == []
+        assert payload["knowledge_bases"] == []
+        assert payload["language"] == "fr"
+        assert payload["config"] == {}
+        assert payload["memory_references"] == []
+        assert payload["persona"] == ""
+        assert payload["llm_selection"] == {
+            "profile_id": "new-profile",
+            "model_id": "new-model",
+        }
+
+    def test_regenerate_preserves_pocketbase_message_id(self, store: SQLiteSessionStore) -> None:
+        sid, _, _ = _seed_session(store, assistant_content=None)
+        runtime = TurnRuntimeManager(store=store)
+        recorder = _FakeStartTurnRecorder()
+
+        async def last_message(_session_id: str, role: str | None = None):
+            if role == "user":
+                return {"id": "pbRecord123abc", "role": "user", "content": "try again"}
+            return None
+
+        with (
+            patch.object(store, "get_last_message", new=last_message),
+            patch.object(runtime, "start_turn", new=recorder),
+        ):
+            asyncio.run(runtime.regenerate_last_turn(sid, overrides={"replay_snapshot": True}))
+
+        payload = recorder.calls[0]
+        assert payload["regenerated_from_message_id"] == "pbRecord123abc"
 
     def test_validation_failure_preserves_existing_assistant_message(
         self, store: SQLiteSessionStore
