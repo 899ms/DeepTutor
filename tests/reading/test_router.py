@@ -61,16 +61,22 @@ def _upload(client: TestClient, name: str = "attention.pdf", data: bytes | None 
     return response.json()
 
 
-def _epub_bytes(*, language: str = "en", paragraph: str = "Readable EPUB text.") -> bytes:
+def _epub_bytes(
+    *,
+    language: str = "en",
+    paragraph: str = "Readable EPUB text.",
+    finder_package: bool = False,
+) -> bytes:
     stream = io.BytesIO()
+    root = "MyBook/" if finder_package else ""
     with zipfile.ZipFile(stream, "w") as archive:
-        archive.writestr("mimetype", "application/epub+zip")
+        archive.writestr(f"{root}mimetype", "application/epub+zip")
         archive.writestr(
-            "META-INF/container.xml",
+            f"{root}META-INF/container.xml",
             "<container><rootfiles><rootfile full-path='OPS/book.opf'/></rootfiles></container>",
         )
         archive.writestr(
-            "OPS/book.opf",
+            f"{root}OPS/book.opf",
             "<package xmlns:dc='http://purl.org/dc/elements/1.1/'>"
             "<metadata><dc:identifier>urn:uuid:router-bilingual</dc:identifier>"
             "<dc:title>Router book</dc:title>"
@@ -79,9 +85,11 @@ def _epub_bytes(*, language: str = "en", paragraph: str = "Readable EPUB text.")
             "<spine><itemref idref='one'/></spine></package>",
         )
         archive.writestr(
-            "OPS/one.xhtml",
+            f"{root}OPS/one.xhtml",
             f"<html><body><h1>Opening</h1><p>{paragraph}</p></body></html>",
         )
+        if finder_package:
+            archive.writestr("__MACOSX/OPS/._one.xhtml", b"\x00" * 8)
     return stream.getvalue()
 
 
@@ -378,6 +386,25 @@ def test_saved_reading_position_updates_account_learning_record(client: TestClie
     assert progress.furthest_locator == 2
     assert progress.furthest_percentage == 0.7
     assert "source_anchor" not in progress.model_dump()
+
+
+def test_epub_raw_response_is_normalized_for_browser_readers(client: TestClient) -> None:
+    material = _upload(
+        client,
+        name="finder-book.epub",
+        data=_epub_bytes(finder_package=True),
+    )
+
+    raw = client.get(f"/api/reading/materials/{material['material_id']}/raw")
+
+    assert raw.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(raw.content)) as archive:
+        infos = archive.infolist()
+        assert archive.read("mimetype") == b"application/epub+zip"
+    assert infos[0].filename == "mimetype"
+    assert infos[0].compress_type == zipfile.ZIP_STORED
+    assert "META-INF/container.xml" in {info.filename for info in infos}
+    assert all("__MACOSX" not in info.filename for info in infos)
 
 
 def test_epub_pairing_requires_confirmation_and_preserves_source_materials(
