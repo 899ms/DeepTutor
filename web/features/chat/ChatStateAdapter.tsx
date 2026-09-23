@@ -2693,12 +2693,6 @@ export function ChatStateAdapterProvider({
       .reverse()
       .find((m) => m.role === "user" && m.requestSnapshot);
     if (!lastUser?.requestSnapshot) return;
-    // Persisted turns can use the server's regenerate path. It removes the
-    // failed answer, replays the saved request, and keeps one user row.
-    if (typeof lastUser.id === "number" && lastUser.id > 0) {
-      regenerateLastMessage();
-      return;
-    }
     // A dropped socket can hide a successfully persisted user row before its
     // DONE ids reach this tab. Query the server before deciding whether this
     // is a regenerate or a genuinely unsaved first attempt.
@@ -2721,7 +2715,7 @@ export function ChatStateAdapterProvider({
       live.sessions[key]?.isStreaming ||
       !["failed", "rejected"].includes(live.sessions[key]?.status ?? "")
     ) return;
-    if (remote.active_turns?.length) {
+    if (remote.active_turns?.length || remote.status === "completed") {
       void loadSessionRef.current?.(session.sessionId);
       return;
     }
@@ -2733,6 +2727,16 @@ export function ChatStateAdapterProvider({
     const newRows = (remote.messages ?? []).filter(
       (message) => message.role !== "system" && !knownIds.has(String(message.id)),
     );
+    // A persisted user can go straight through the server's regenerate path.
+    // If other rows arrived since this tab's snapshot, show them first.
+    if (typeof lastUser.id === "number" && lastUser.id > 0) {
+      if (newRows.length > 0) {
+        void loadSessionRef.current?.(session.sessionId);
+      } else {
+        regenerateLastMessage();
+      }
+      return;
+    }
     const persistedUser = [...newRows].reverse().find((message) => message.role === "user");
     if (persistedUser) {
       if (
