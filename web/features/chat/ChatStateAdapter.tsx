@@ -2736,6 +2736,7 @@ export function ChatStateAdapterProvider({
     const persistedUser = [...newRows].reverse().find((message) => message.role === "user");
     if (persistedUser) {
       if (
+        !["failed", "rejected", "cancelled"].includes(remote.status ?? "") ||
         persistedUser.content !== lastUser.requestSnapshot.content ||
         (persistedUser.parent_message_id ?? null) !== (lastUser.parentMessageId ?? null)
       ) {
