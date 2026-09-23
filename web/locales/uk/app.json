@@ -4946,6 +4946,7 @@
   "Stop recording": "Зупинити запис",
   "Commands": "Команди",
   "Switch the persona for this chat session": "Змінити персону для цього сеансу чату",
+  "Switch the reply language for this chat session": "Змінити мову відповіді для цього чату",
   "Search personas...": "Пошук персон...",
   "No persona — the assistant's standard behavior": "Без персони — стандартна поведінка помічника",
   "Preset": "Попереднє налаштування",

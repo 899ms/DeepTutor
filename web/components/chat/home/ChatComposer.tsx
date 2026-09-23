@@ -257,6 +257,11 @@ export default memo(function ChatComposer({
   onPersonaSelectionChange,
   personaSelectorOpen,
   onPersonaSelectorOpenChange,
+  replyLanguageOverride,
+  replyLanguageOptions,
+  replyLanguageDefaultLabel,
+  replyLanguageDisabled,
+  onReplyLanguageChange,
   resourceCatalog,
   resourceSelection,
   onResourceSelectionChange,
@@ -384,13 +389,19 @@ export default memo(function ChatComposer({
   /**
    * Session-persona wiring (main chat only). When `onPersonaSelectionChange`
    * is provided, the toolbar shows a PersonaSelector chip and the composer
-   * accepts the `/persona` slash command. The quiz follow-up surface omits
-   * these and keeps its per-turn persona picker flow.
+   * accepts `/persona`. The quiz follow-up surface omits these and keeps its
+   * per-turn persona picker flow.
    */
   personaSelection?: string;
   onPersonaSelectionChange?: (persona: string) => void;
   personaSelectorOpen?: boolean;
   onPersonaSelectorOpenChange?: (open: boolean) => void;
+  /** Main chat's session-level reply language, selected via /language. */
+  replyLanguageOverride?: string | null;
+  replyLanguageOptions?: readonly { value: string; label: string }[];
+  replyLanguageDefaultLabel?: string;
+  replyLanguageDisabled?: boolean;
+  onReplyLanguageChange?: (value: string) => void;
   /**
    * Skill / MCP narrowing for this conversation. Supplied together: the
    * catalog is what may be picked (already clipped to what the workspace
@@ -1042,6 +1053,12 @@ export default memo(function ChatComposer({
                 ? () => onPersonaSelectorOpenChange(true)
                 : undefined
             }
+            replyLanguageOverride={replyLanguageOverride}
+            replyLanguageOptions={replyLanguageOptions}
+            replyLanguageDefaultLabel={replyLanguageDefaultLabel}
+            replyLanguageDisabled={replyLanguageDisabled}
+            onReplyLanguageChange={onReplyLanguageChange}
+            languagePickerBelow={!hasMessages}
             placeholder={inputPlaceholder}
             placeholderCompletion={inputPlaceholderCompletion}
             minHeight={hasMessages ? 28 : 64}

@@ -2506,27 +2506,6 @@ export default function ChatWorkspace({
                   </span>
                 ) : null}
               </div>
-              <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
-                <span className="hidden sm:inline">{t("Reply language")}</span>
-                <select
-                  aria-label={t("Reply language")}
-                  value={state.replyLanguageOverride ?? ""}
-                  onChange={(event) => handleReplyLanguageChange(event.target.value)}
-                  disabled={replyLanguageSavingKey === state.sessionKey || state.isStreaming}
-                  className="max-w-[170px] rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-50"
-                >
-                  <option value="">
-                    {t("Account default")} ({RESPONSE_LANGUAGE_OPTIONS.find(
-                      (option) => option.value === readStoredResponseLanguage(),
-                    )?.label ?? "English"})
-                  </option>
-                  {RESPONSE_LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <div className="flex shrink-0 items-center gap-0.5">
                 <HeaderActionButton
                   onClick={() => setShowSaveModal(true)}
@@ -2790,6 +2769,13 @@ export default function ChatWorkspace({
                 onPersonaSelectionChange={setPersonaSelection}
                 personaSelectorOpen={personaSelectorOpen}
                 onPersonaSelectorOpenChange={setPersonaSelectorOpen}
+                replyLanguageOverride={state.replyLanguageOverride}
+                replyLanguageOptions={RESPONSE_LANGUAGE_OPTIONS}
+                replyLanguageDefaultLabel={RESPONSE_LANGUAGE_OPTIONS.find(
+                  (option) => option.value === readStoredResponseLanguage(),
+                )?.label ?? "English"}
+                replyLanguageDisabled={replyLanguageSavingKey === state.sessionKey || state.isStreaming}
+                onReplyLanguageChange={handleReplyLanguageChange}
                 resourceCatalog={resourceCatalog}
                 resourceSelection={state.resourceSelection}
                 onResourceSelectionChange={setResourceSelection}

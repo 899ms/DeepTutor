@@ -4929,6 +4929,7 @@
   "Stop recording": "停止录音",
   "Commands": "命令",
   "Switch the persona for this chat session": "切换当前对话的人格",
+  "Switch the reply language for this chat session": "切换当前对话的回复语言",
   "Search personas...": "搜索人格…",
   "No persona — the assistant's standard behavior": "不使用人格 — 使用助手的默认行为",
   "Preset": "预设",

@@ -4929,6 +4929,7 @@
   "Stop recording": "Stop recording",
   "Commands": "Commands",
   "Switch the persona for this chat session": "Switch the persona for this chat session",
+  "Switch the reply language for this chat session": "Switch the reply language for this chat session",
   "Search personas...": "Search personas...",
   "No persona — the assistant's standard behavior": "No persona — the assistant's standard behavior",
   "Preset": "Preset",
