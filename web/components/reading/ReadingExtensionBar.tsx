@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Sparkles, Square, Volume2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -352,21 +352,27 @@ function QuizQuestions({
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [verdicts, setVerdicts] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const pendingSubmissions = useRef<Record<string, { selected: number; id: string }>>({});
 
   async function persistAnswer(question: QuizQuestion, index: number, choiceIndex: number) {
     const questionId = question.id || `q_${index + 1}`;
     const key = question.id || String(index);
+    const pending = pendingSubmissions.current[key];
+    const submissionId = pending?.selected === choiceIndex ? pending.id : crypto.randomUUID();
+    pendingSubmissions.current[key] = { selected: choiceIndex, id: submissionId };
     setSaving((current) => ({ ...current, [key]: true }));
     try {
       const results = await submitReadingQuizAnswers(materialId, {
         locator,
         session_id: sessionId || "",
+        submission_id: submissionId,
         answers: [{ question_id: questionId, selected_index: choiceIndex }],
       });
       const verdict = results.find((item) => item.question_id === questionId);
       if (!verdict) throw new Error(t("Failed to save answer. Please try again."));
       setAnswers((current) => ({ ...current, [key]: choiceIndex }));
       setVerdicts((current) => ({ ...current, [key]: verdict.is_correct }));
+      delete pendingSubmissions.current[key];
     } catch (error) {
       onError(error instanceof Error ? error.message : String(error));
     } finally {

@@ -69,6 +69,7 @@ class QuizAnswersPayload(BaseModel):
     section_title: str = Field(default="", max_length=500)
     session_id: str = ""
     turn_id: str = ""
+    submission_id: str = Field(default="", max_length=200)
     answers: list[QuizAnswerItem] = Field(min_length=1)
 
 
@@ -315,6 +316,12 @@ async def submit_quiz_answers(material_id: str, payload: QuizAnswersPayload) -> 
             str(choices[item.selected_index]) if 0 <= item.selected_index < len(choices) else ""
         )
         correct_text = str(choices[correct_index]) if 0 <= correct_index < len(choices) else ""
+        submission_id = payload.submission_id.strip()
+        attempt_id = (
+            f"reading:{material_id}:{payload.locator}:{item.question_id.strip()}:{submission_id}"
+            if submission_id
+            else ""
+        )
         try:
             await record_assessment(
                 AssessmentRecord(
@@ -338,6 +345,7 @@ async def submit_quiz_answers(material_id: str, payload: QuizAnswersPayload) -> 
                     section_title=section_title,
                     mastery_path_id=str(question.get("mastery_path_id") or ""),
                     knowledge_point_id=str(question.get("knowledge_point_id") or ""),
+                    attempt_id=attempt_id,
                 )
             )
         except RecordAssessmentError as exc:

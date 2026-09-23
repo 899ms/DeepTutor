@@ -152,6 +152,15 @@ async def lifespan(app: FastAPI):
             len(migration_reports["workspace_preferences"]),
         )
 
+    try:
+        from deeptutor.learning.assessment import reconcile_linked_assessments
+
+        recovered, failed = await reconcile_linked_assessments()
+        if recovered or failed:
+            logger.info("Linked assessment recovery: recovered=%s failed=%s", recovered, failed)
+    except Exception:
+        logger.exception("Failed to reconcile linked assessments at startup")
+
     # Initialize LLM client early so OPENAI_* env vars are available before
     # any downstream provider integrations start.
     try:

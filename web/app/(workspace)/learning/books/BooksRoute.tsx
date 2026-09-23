@@ -153,6 +153,7 @@ function BookPageInner() {
    * every single book, as the first thing generation ever said.
    */
   const revisionRef = useRef<number | undefined>(undefined)
+  const pendingQuizSubmissions = useRef(new Map<string, { answer: string; id: string }>())
 
   // ── Data loaders ───────────────────────────────────────────────────
 
@@ -866,6 +867,11 @@ function BookPageInner() {
     guard('Record answer', async () => {
       if (!detail || !selectedPage) return
       const bookId = detail.book.id
+      const key = `${bookId}:${selectedPage.id}:${block.id}:${args.questionId || ''}`
+      const answer = `${args.userAnswer || ''}:${String(args.isCorrect)}`
+      const pending = pendingQuizSubmissions.current.get(key)
+      const submissionId = pending?.answer === answer ? pending.id : crypto.randomUUID()
+      pendingQuizSubmissions.current.set(key, { answer, id: submissionId })
       const { progress } = await bookApi.recordQuizAttempt({
         book_id: bookId,
         page_id: selectedPage.id,
@@ -873,7 +879,9 @@ function BookPageInner() {
         question_id: args.questionId,
         user_answer: args.userAnswer,
         is_correct: args.isCorrect,
+        submission_id: submissionId,
       })
+      pendingQuizSubmissions.current.delete(key)
       setDetail(current =>
         current && current.book.id === bookId ? { ...current, progress } : current
       )

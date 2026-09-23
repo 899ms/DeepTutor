@@ -4347,7 +4347,8 @@
           "language": {
             "enum": [
               "zh",
-              "en"
+              "en",
+              "fr"
             ],
             "title": "Language",
             "type": "string"
@@ -6103,6 +6104,21 @@
             "title": "Options",
             "type": "object"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "practice": {
             "anyOf": [
               {
@@ -6197,6 +6213,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -6243,7 +6260,6 @@
         },
         "required": [
           "id",
-          "session_id",
           "question",
           "created_at",
           "updated_at"
@@ -7235,6 +7251,12 @@
             "title": "Source Anchor",
             "type": "string"
           },
+          "submission_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Submission Id",
+            "type": "string"
+          },
           "turn_id": {
             "default": "",
             "title": "Turn Id",
@@ -7276,6 +7298,12 @@
           "question_id": {
             "default": "",
             "title": "Question Id",
+            "type": "string"
+          },
+          "submission_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Submission Id",
             "type": "string"
           },
           "user_answer": {
@@ -7935,6 +7963,22 @@
           "rating"
         ],
         "title": "ReviewRequest",
+        "type": "object"
+      },
+      "ReviewSettingsRequest": {
+        "description": "A per-path recall target; higher values schedule shorter intervals.",
+        "properties": {
+          "desired_retention": {
+            "maximum": 0.99,
+            "minimum": 0.7,
+            "title": "Desired Retention",
+            "type": "number"
+          }
+        },
+        "required": [
+          "desired_retention"
+        ],
+        "title": "ReviewSettingsRequest",
         "type": "object"
       },
       "RoundSummaryRequest": {
@@ -10073,7 +10117,8 @@
               {
                 "enum": [
                   "zh",
-                  "en"
+                  "en",
+                  "fr"
                 ],
                 "type": "string"
               },
@@ -10088,7 +10133,8 @@
               {
                 "enum": [
                   "zh",
-                  "en"
+                  "en",
+                  "fr"
                 ],
                 "type": "string"
               },
@@ -11015,6 +11061,21 @@
             ],
             "title": "Options"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "quality": {
             "anyOf": [
               {
@@ -11066,6 +11127,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -11108,7 +11170,6 @@
           }
         },
         "required": [
-          "session_id",
           "question_id",
           "question"
         ],
@@ -11418,6 +11479,19 @@
           "voice_autoplay"
         ],
         "title": "VoiceAutoplayUpdate",
+        "type": "object"
+      },
+      "VoiceMathSpeakUpdate": {
+        "properties": {
+          "voice_math_speak": {
+            "title": "Voice Math Speak",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voice_math_speak"
+        ],
+        "title": "VoiceMathSpeakUpdate",
         "type": "object"
       },
       "VoicePreviewPayload": {
@@ -26220,6 +26294,158 @@
         ]
       }
     },
+    "/api/mastery-paths/topics/{path_id}/review-settings": {
+      "get": {
+        "operationId": "get_review_settings_api_mastery_paths_topics__path_id__review_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path_id",
+            "required": true,
+            "schema": {
+              "title": "Path Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Review Settings",
+        "tags": [
+          "mastery-path"
+        ]
+      },
+      "put": {
+        "operationId": "update_review_settings_api_mastery_paths_topics__path_id__review_settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path_id",
+            "required": true,
+            "schema": {
+              "title": "Path Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Review Settings",
+        "tags": [
+          "mastery-path"
+        ]
+      }
+    },
     "/api/mastery-paths/topics/{path_id}/sessions": {
       "get": {
         "operationId": "list_topic_sessions_api_mastery_paths_topics__path_id__sessions_get",
@@ -37271,9 +37497,35 @@
           {
             "in": "query",
             "name": "session_id",
-            "required": true,
+            "required": false,
             "schema": {
+              "default": "",
               "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_type",
+            "required": false,
+            "schema": {
+              "default": "conversation",
+              "enum": [
+                "conversation",
+                "external_import",
+                "document_analysis"
+              ],
+              "title": "Origin Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_ref",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Origin Ref",
               "type": "string"
             }
           },
@@ -49357,6 +49609,80 @@
           }
         },
         "summary": "Update Voice Autoplay",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/voice-math-speak": {
+      "put": {
+        "description": "Persist whether TTS verbalizes LaTeX as spoken math.\n\nA personal UI preference (any authenticated user). The voice router reads\nthis on each synthesis call; chat does not send a per-request override.\nDollar-sign delimiters are stripped even when this is off.",
+        "operationId": "update_voice_math_speak_api_settings_voice_math_speak_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceMathSpeakUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Voice Math Speak",
         "tags": [
           "settings"
         ]

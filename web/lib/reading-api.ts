@@ -371,6 +371,7 @@ export async function submitReadingQuizAnswers(
     section_title?: string;
     session_id?: string;
     turn_id?: string;
+    submission_id?: string;
     answers: ReadingQuizAnswer[];
   },
 ): Promise<ReadingQuizAnswerVerdict[]> {
@@ -386,6 +387,7 @@ export async function submitReadingQuizAnswers(
           section_title: payload.section_title || "",
           session_id: payload.session_id || "",
           turn_id: payload.turn_id || "",
+          submission_id: payload.submission_id || "",
           answers: payload.answers.map((row) => ({
             question_id: row.question_id,
             selected_index: row.selected_index,

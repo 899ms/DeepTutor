@@ -15,11 +15,13 @@ from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 class _FakeLearningStore:
     def __init__(self) -> None:
         self.saved: list[Progress] = []
+        self.current: Progress | None = None
 
     def load_progress(self, book_id: str) -> Progress:
-        return Progress(book_id=book_id)
+        return self.current or Progress(book_id=book_id)
 
     def save_progress(self, progress: Progress) -> None:
+        self.current = progress
         self.saved.append(progress)
 
 
@@ -129,3 +131,38 @@ def test_quiz_attempt_does_not_create_a_synthetic_chat_session(tmp_path, monkeyp
     assert entries["items"][0]["session_id"] == ""
     assert entries["items"][0]["origin_type"] == "document_analysis"
     assert entries["items"][0]["origin_ref"] == "book:book-1"
+
+
+def test_book_submission_retry_is_idempotent_but_new_submission_is_evidence(
+    tmp_path, monkeypatch
+) -> None:
+    store = SQLiteSessionStore(db_path=tmp_path / "sessions.db")
+    asyncio.run(store.create_session(session_id="page-chat-1", title="Page 1 chat"))
+    resolved = _FakeResolvedBook()
+    monkeypatch.setattr(book_router, "_resolve_book_or_404", lambda _: resolved)
+    monkeypatch.setattr(session_package, "get_sqlite_session_store", lambda: store)
+    app = FastAPI()
+    app.include_router(book_router.router, prefix="/api")
+    payload = {
+        "book_id": "book-1",
+        "page_id": "page-1",
+        "block_id": "block-1",
+        "question_id": "q1",
+        "user_answer": "A",
+        "is_correct": False,
+        "submission_id": "click-1",
+    }
+    with TestClient(app) as client:
+        assert client.post("/api/books/quiz-attempt", json=payload).status_code == 200
+        assert client.post("/api/books/quiz-attempt", json=payload).status_code == 200
+        assert (
+            client.post(
+                "/api/books/quiz-attempt", json={**payload, "submission_id": "click-2"}
+            ).status_code
+            == 200
+        )
+
+    assert len(resolved.learning.current.quiz_attempts) == 2
+    attempts = asyncio.run(store.list_assessment_attempts("page-chat-1", question_id="q1"))
+    assert len(attempts) == 2
+    assert [item["attempt_count"] for item in attempts] == [1, 2]
