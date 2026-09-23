@@ -130,6 +130,20 @@ def test_rebuild_level_unit_filter_drops_other_levels() -> None:
     assert [c.title for c in chapters] == ["第1节 函数的概念", "第2节 函数的表示法"]
 
 
+def test_section_numbering_can_restart_in_a_new_chapter() -> None:
+    layout = {
+        "pdf_info": [
+            _page(0, [_footer("第一章 A"), _footer("第一节 概述")]),
+            _page(1, [_footer("第二章 B"), _footer("第一节 概述")]),
+        ]
+    }
+    chapters = rebuild_from_headers_level(layout, unit="节")
+    assert [(chapter.title, chapter.page_idx, chapter.end_page_idx) for chapter in chapters] == [
+        ("第一节 概述", 0, 1),
+        ("第一节 概述", 1, 2),
+    ]
+
+
 def test_chapters_starting_on_one_page_both_include_that_page() -> None:
     chapters = [Chapter("A", 2, []), Chapter("B", 2, [])]
     assert [chapter.end_page_idx for chapter in assign_page_ranges(chapters, page_count=3)] == [

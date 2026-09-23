@@ -58,6 +58,7 @@ import {
 } from "@/lib/message-branches";
 import { nextOptimisticId, resolvePersistedMessage } from "@/lib/optimistic-id";
 import { reconcileTurnIds } from "@/lib/turn-reconcile";
+import { decideFailedTurnReplay, isFailedTurnVisible } from "@/lib/chat-resend";
 import {
   isRetractionMarker,
   recomputeAnswerContent,
@@ -2650,7 +2651,7 @@ export function ChatStateAdapterProvider({
     [sendThroughRunner],
   );
 
-  const regenerateLastMessage = useCallback(() => {
+  const regenerateLastMessage = useCallback((replaySnapshot = false) => {
     const currentState = stateRef.current;
     const key = currentState.selectedKey;
     if (!key) return;
@@ -2675,9 +2676,9 @@ export function ChatStateAdapterProvider({
     sendThroughRunner(key, {
       type: "regenerate",
       session_id: session.sessionId,
-      overrides: {
-        language: readStoredResponseLanguage(),
-      },
+      overrides: replaySnapshot
+        ? { replay_snapshot: true }
+        : { language: readStoredResponseLanguage() },
     });
   }, [sendThroughRunner]);
 
@@ -2687,8 +2688,12 @@ export function ChatStateAdapterProvider({
     if (!key) return;
     const session = currentState.sessions[key];
     if (!session || !session.sessionId) return;
-    if (session.isStreaming) return;
-    if (session.status !== "failed" && session.status !== "rejected") return;
+    if (!isFailedTurnVisible(
+      session.messages,
+      session.selectedBranches,
+      session.status,
+      session.isStreaming,
+    )) return;
     const lastUser = [...session.messages]
       .reverse()
       .find((m) => m.role === "user" && m.requestSnapshot);
@@ -2710,67 +2715,55 @@ export function ChatStateAdapterProvider({
       resolvingResendRef.current.delete(key);
     }
     const live = stateRef.current;
+    const liveSession = live.sessions[key];
     if (
       live.selectedKey !== key ||
-      live.sessions[key]?.isStreaming ||
-      !["failed", "rejected"].includes(live.sessions[key]?.status ?? "")
+      !liveSession ||
+      !isFailedTurnVisible(
+        liveSession.messages,
+        liveSession.selectedBranches,
+        liveSession.status,
+        liveSession.isStreaming,
+      )
     ) return;
-    if (remote.active_turns?.length) {
+    const liveLastUser = [...liveSession.messages]
+      .reverse()
+      .find((message) => message.role === "user" && message.requestSnapshot);
+    if (!liveLastUser?.requestSnapshot) return;
+    const decision = decideFailedTurnReplay(
+      liveSession.messages,
+      { ...liveLastUser, requestSnapshot: liveLastUser.requestSnapshot },
+      remote,
+    );
+    if (decision.kind === "refresh") {
       void loadSessionRef.current?.(session.sessionId);
       return;
     }
-    const knownIds = new Set(
-      session.messages
-        .filter((message) => typeof message.id === "number" && message.id > 0)
-        .map((message) => String(message.id)),
-    );
-    const newRows = (remote.messages ?? []).filter(
-      (message) => message.role !== "system" && !knownIds.has(String(message.id)),
-    );
-    // A persisted user can go straight through the server's regenerate path.
-    // If other rows arrived since this tab's snapshot, show them first.
-    if (typeof lastUser.id === "number" && lastUser.id > 0) {
-      if (newRows.length > 0 || remote.status === "completed") {
-        void loadSessionRef.current?.(session.sessionId);
-      } else {
-        regenerateLastMessage();
-      }
-      return;
-    }
-    const persistedUser = [...newRows].reverse().find((message) => message.role === "user");
-    if (persistedUser) {
-      if (
-        !["failed", "rejected", "cancelled"].includes(remote.status ?? "") ||
-        persistedUser.content !== lastUser.requestSnapshot.content ||
-        (persistedUser.parent_message_id ?? null) !== (lastUser.parentMessageId ?? null)
-      ) {
-        void loadSessionRef.current?.(session.sessionId);
-        return;
-      }
+    if (decision.kind === "reconcile_regenerate") {
       dispatch({
         type: "RECONCILE_TURN",
         key,
         turnId: null,
-        userMessageId: persistedUser.id,
+        // Runtime storage can return PocketBase string IDs; the existing
+        // reconciliation path preserves them despite its numeric legacy type.
+        userMessageId: decision.userId as number,
         assistantMessageId: null,
       });
-      regenerateLastMessage();
-      return;
     }
-    if (newRows.length > 0) {
-      void loadSessionRef.current?.(session.sessionId);
+    if (decision.kind === "regenerate" || decision.kind === "reconcile_regenerate") {
+      regenerateLastMessage(true);
       return;
     }
     // The first attempt failed before the user row reached storage. Retry it
     // as a new turn, keeping the existing optimistic row visible.
-    const lastMessage = session.messages[session.messages.length - 1];
+    const lastMessage = liveSession.messages[liveSession.messages.length - 1];
     if (lastMessage?.role === "assistant") {
       pendingResendRef.current.set(key, { ...lastMessage });
     }
     // Remove the trailing failed assistant bubble so the new turn's
     // STREAM_START placeholder replaces it rather than stacking below.
     dispatch({ type: "POP_LAST_ASSISTANT", key });
-    const snapshot = lastUser.requestSnapshot;
+    const snapshot = liveLastUser.requestSnapshot;
     void sendMessage(
       snapshot.content,
       undefined,
@@ -2781,10 +2774,10 @@ export function ChatStateAdapterProvider({
         displayUserMessage: false,
         requestSnapshotOverride: snapshot,
         parentMessageId:
-          typeof lastUser.parentMessageId === "number" &&
-          lastUser.parentMessageId <= 0
+          typeof liveLastUser.parentMessageId === "number" &&
+          liveLastUser.parentMessageId <= 0
             ? undefined
-            : lastUser.parentMessageId,
+            : liveLastUser.parentMessageId,
       },
     ).then((sent) => {
       if (sent) return;
@@ -2796,7 +2789,6 @@ export function ChatStateAdapterProvider({
 
   const derivedState = useMemo<ChatState>(() => {
     const current = ensureSelectedSession(state);
-    const lastMsg = current.messages[current.messages.length - 1];
     return {
       sessionKey: current.key,
       sessionId: current.sessionId,
@@ -2818,10 +2810,12 @@ export function ChatStateAdapterProvider({
       currentStage: current.currentStage,
       language: current.language,
       selectedBranches: current.selectedBranches,
-      lastTurnFailed:
-        !current.isStreaming &&
-        (current.status === "failed" || current.status === "rejected") &&
-        lastMsg?.role === "assistant",
+      lastTurnFailed: isFailedTurnVisible(
+        current.messages,
+        current.selectedBranches,
+        current.status,
+        current.isStreaming,
+      ),
     };
   }, [state]);
 

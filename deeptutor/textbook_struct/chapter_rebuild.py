@@ -201,6 +201,13 @@ UNIT_RE_MAP = {
     "单元": re.compile(r"^第\s*[一二三四五六七八九十百\d]+\s*单元"),
 }
 
+PARENT_UNITS = {
+    "课": ("单元", "章"),
+    "章": ("单元",),
+    "节": ("单元", "章"),
+    "单元": (),
+}
+
 
 def rebuild_from_headers_level(layout: dict, unit: str = "课") -> list[Chapter]:
     """Level-aware rebuild: only ``unit``-level running-header changes mark boundaries.
@@ -217,16 +224,27 @@ def rebuild_from_headers_level(layout: dict, unit: str = "课") -> list[Chapter]
     if unit_re is None:
         raise ValueError(f"unknown unit: {unit}")
     chapters: list[Chapter] = []
-    seen: set[str] = set()
+    parent_titles: dict[str, str] = {}
+    last_boundary: tuple[str, ...] | None = None
     page_count = layout_page_count(layout)
-    for page in layout.get("pdf_info", []):
+    for page in sorted(layout.get("pdf_info", []), key=lambda item: item["page_idx"]):
         footers, printed = page_facts(page)
+        for title in footers:
+            for parent_unit in PARENT_UNITS[unit]:
+                if UNIT_RE_MAP[parent_unit].match(title):
+                    parent_titles[parent_unit] = title
+                    if parent_unit == "单元":
+                        parent_titles.pop("章", None)
         for title in footers:
             if not unit_re.match(title):
                 continue
-            if title in seen:
+            boundary = (
+                *(parent_titles.get(parent_unit, "") for parent_unit in PARENT_UNITS[unit]),
+                title,
+            )
+            if boundary == last_boundary:
                 continue
-            seen.add(title)
+            last_boundary = boundary
             chapters.append(
                 Chapter(
                     title=title,

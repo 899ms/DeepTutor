@@ -6,13 +6,6 @@ import test from "node:test";
 const source = (relative: string) =>
   fs.readFileSync(path.resolve(process.cwd(), relative), "utf8");
 
-test("ChatStateAdapter exposes lastTurnFailed derived state", () => {
-  const adapter = source("features/chat/ChatStateAdapter.tsx");
-  assert.match(adapter, /lastTurnFailed/);
-  assert.match(adapter, /"failed".*"rejected"/);
-  assert.match(adapter, /lastMsg\?\.role === "assistant"/);
-});
-
 test("ChatStateAdapter implements resendLastMessage preserving snapshot", () => {
   const adapter = source("features/chat/ChatStateAdapter.tsx");
   assert.match(adapter, /resendLastMessage/);
