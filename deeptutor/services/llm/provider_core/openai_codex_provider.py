@@ -91,20 +91,19 @@ class OpenAICodexProvider(LLMProvider):
                     if exc.status_code == 401:
                         try:
                             await service.recover_after_unauthorized(token.generation)
-                        except CodexAuthError:
+                        except CodexAuthError as refresh_error:
                             # Only promise a retry when the session really was
                             # renewed; a dead refresh token needs a new sign-in.
                             logger.warning("Codex token renewal after HTTP 401 failed")
-                            raise CodexHTTPError(
-                                exc.status_code,
-                                "Codex login expired and could not be renewed. Sign in again.",
-                            ) from None
-                    elif exc.status_code == 403:
-                        # Account-level denial: the session itself is fine but
-                        # this account may no longer call the backend. Fail
-                        # fast for the cooldown instead of re-running an
-                        # auth+refresh round trip on every message (#1454).
-                        service.mark_reauth_required()
+                            if refresh_error.code in {
+                                "authentication_required",
+                                "token_refresh_rejected",
+                            }:
+                                raise CodexHTTPError(
+                                    exc.status_code,
+                                    "Codex login expired and could not be renewed. Sign in again.",
+                                ) from None
+                            raise
                     raise
                 return LLMResponse(
                     content=content,

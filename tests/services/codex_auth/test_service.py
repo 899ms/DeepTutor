@@ -1710,14 +1710,14 @@ async def test_get_token_stops_refreshing_after_a_failed_refresh(tmp_path: Path)
         expected_generation=0,
     )
     oauth.refresh_error = CodexAuthError(
-        "token_refresh_failed",
+        "token_refresh_rejected",
         "Codex authentication could not be refreshed.",
-        502,
+        401,
     )
 
     with pytest.raises(CodexAuthError) as first:
         await service.get_token()
-    assert first.value.code == "token_refresh_failed"
+    assert first.value.code == "token_refresh_rejected"
     assert oauth.refresh_calls == 1
 
     # Same conversation, next turn, still inside the cooldown: no second trip
@@ -1739,7 +1739,7 @@ async def test_get_token_retries_after_the_reauth_cooldown_elapses(tmp_path: Pat
         _stored_credentials(expires_at=1_200),
         expected_generation=0,
     )
-    oauth.refresh_error = CodexAuthError("token_refresh_failed", "boom", 502)
+    oauth.refresh_error = CodexAuthError("token_refresh_rejected", "boom", 401)
 
     with pytest.raises(CodexAuthError):
         await service.get_token()
@@ -1749,6 +1749,25 @@ async def test_get_token_retries_after_the_reauth_cooldown_elapses(tmp_path: Pat
     clock[0] += 120
     oauth.refresh_error = None
     token = await service.get_token()
+    assert oauth.refresh_calls == 2
+    assert token.access_token == "refreshed-access"
+
+
+@pytest.mark.asyncio
+async def test_transient_refresh_failure_can_retry_next_turn(tmp_path: Path) -> None:
+    clock = [1_000]
+    service, _callback, oauth, _catalog, store, _models = await _oauth_service(
+        tmp_path, clock=clock
+    )
+    store.commit_credentials(_stored_credentials(expires_at=1_200), expected_generation=0)
+    oauth.refresh_error = CodexAuthError("token_refresh_failed", "Temporary failure", 502)
+
+    with pytest.raises(CodexAuthError) as failure:
+        await service.get_token()
+    assert failure.value.code == "token_refresh_failed"
+    oauth.refresh_error = None
+    token = await service.get_token()
+
     assert oauth.refresh_calls == 2
     assert token.access_token == "refreshed-access"
 
@@ -1766,7 +1785,7 @@ async def test_failed_refresh_marks_reauth_required_until_next_login(
         _stored_credentials(expires_at=1_200),
         expected_generation=0,
     )
-    oauth.refresh_error = CodexAuthError("token_refresh_failed", "boom", 502)
+    oauth.refresh_error = CodexAuthError("token_refresh_rejected", "boom", 401)
 
     with pytest.raises(CodexAuthError):
         await service.get_token()

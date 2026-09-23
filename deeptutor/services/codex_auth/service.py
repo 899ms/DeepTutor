@@ -798,11 +798,11 @@ class CodexOAuthService:
     ) -> CodexCredentials:
         try:
             payload = await self._oauth.refresh(credentials.refresh_token)
-        except CodexAuthError:
-            # The refresh token is not just expiring — the provider rejected
-            # the refresh. Remember that so get_token fails fast for a while
-            # instead of retrying a dead refresh on every turn (#1454).
-            self._mark_reauth_required()
+        except CodexAuthError as exc:
+            # Only a rejected refresh grant means the user must sign in again.
+            # Transport failures and provider 5xx responses are transient.
+            if exc.code == "token_refresh_rejected":
+                self._mark_reauth_required()
             raise
         refreshed = self._credentials_from_payload(
             payload,
@@ -819,6 +819,7 @@ class CodexOAuthService:
             refreshed,
             expected_generation=credentials.generation,
         )
+        self._clear_reauth_required()
         # Generation matching invalidates model data without discarding the
         # same account's successful catalog client version.
         return committed
@@ -834,11 +835,7 @@ class CodexOAuthService:
                 )
             if credentials.generation != generation:
                 return
-            try:
-                await self._refresh_credentials(credentials)
-            finally:
-                if not self._reauth_required():
-                    self._clear_reauth_required()
+            await self._refresh_credentials(credentials)
 
     @asynccontextmanager
     async def inference_guard(self) -> AsyncIterator[None]:
@@ -955,15 +952,6 @@ class CodexOAuthService:
     def _reauth_required(self) -> bool:
         deadline = self._reauth_until
         return deadline is not None and self._clock() < deadline
-
-    # Public entry points for the provider layer, which is in another module
-    # and calls the service across it.
-    def mark_reauth_required(self) -> None:
-        """Ask get_token to fail fast for the cooldown window."""
-        self._mark_reauth_required()
-
-    def clear_reauth_required(self) -> None:
-        self._clear_reauth_required()
 
     def public_status(self) -> dict[str, Any]:
         operation = self._operation

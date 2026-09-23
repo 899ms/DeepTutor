@@ -185,11 +185,10 @@ async def test_401_with_dead_refresh_token_does_not_promise_a_retry(
 
 
 @pytest.mark.asyncio
-async def test_403_marks_reauth_required_account_level_denial(
+async def test_403_does_not_mark_reauth_required(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 403 is an account-level denial refresh cannot fix; it must not be
-    replayed as a retry loop and should mark the session for fast failure."""
+    """A 403 may be model access denial, not a revoked OAuth grant."""
     service = FakeCodexService()
 
     async def rejected_request(*_args: Any, **_kwargs: Any) -> tuple[str, list[Any], str]:
@@ -205,7 +204,7 @@ async def test_403_marks_reauth_required_account_level_denial(
 
     assert result.finish_reason == "error"
     assert "account" in result.content.lower()
-    assert service.marked_reauth is True
+    assert service.marked_reauth is False
 
 
 @pytest.mark.asyncio
