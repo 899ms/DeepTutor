@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, wait
+import threading
+import time
+
 import pytest
 
 from deeptutor.services.config.provider_runtime import ResolvedSearchConfig
@@ -800,6 +804,7 @@ def test_source_filter_web_risk_caches_lookups() -> None:
     from deeptutor.services.search import source_filter
 
     source_filter._web_risk_cache.clear()
+
     calls: list[str] = []
 
     def _fake_web_risk(url: str, *, api_key: str) -> bool:
@@ -838,3 +843,48 @@ def test_source_filter_web_risk_caches_lookups() -> None:
 
     assert calls == ["https://school.example/lesson"]
     source_filter._web_risk_cache.clear()
+
+
+def test_web_risk_batch_has_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    from deeptutor.services.search import source_filter
+
+    monkeypatch.setattr(source_filter, "_WEB_RISK_BATCH_TIMEOUT_S", 0.05)
+
+    def slow(_url: str, *, api_key: str) -> bool:
+        time.sleep(0.2)
+        return False
+
+    started = time.monotonic()
+    urls = [f"https://example.org/page-{i}" for i in range(12)]
+    assert source_filter._web_risk_rejections(urls, api_key="test", request_web_risk=slow) == set()
+    assert time.monotonic() - started < 0.15
+    wait(list(source_filter._web_risk_inflight.values()), timeout=2)
+
+
+def test_concurrent_web_risk_calls_share_inflight_lookup() -> None:
+    from deeptutor.services.search import source_filter
+
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def lookup(_url: str, *, api_key: str) -> bool:
+        nonlocal calls
+        calls += 1
+        started.set()
+        assert release.wait(2)
+        return True
+
+    url = "https://example.org/shared-lookup"
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(
+            source_filter._web_risk_rejections, [url], api_key="test", request_web_risk=lookup
+        )
+        assert started.wait(2)
+        second = executor.submit(
+            source_filter._web_risk_rejections, [url], api_key="test", request_web_risk=lookup
+        )
+        release.set()
+        assert first.result(timeout=2) == {url}
+        assert second.result(timeout=2) == {url}
+    assert calls == 1

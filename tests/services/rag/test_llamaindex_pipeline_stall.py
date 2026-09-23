@@ -10,6 +10,8 @@ operations with a clear error instead of hanging indefinitely.
 
 from __future__ import annotations
 
+import asyncio
+from contextvars import ContextVar
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -24,6 +26,12 @@ def _llamaindex_modules() -> tuple[Any, Any, Any]:
     from deeptutor.services.rag.pipelines.llamaindex.pipeline import LlamaIndexPipeline
 
     return pipeline_module, storage_module, LlamaIndexPipeline
+
+
+@pytest.fixture(autouse=True)
+def _avoid_real_embedding_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda _callback: None)
 
 
 async def _async_noop(*args, **kwargs) -> None:
@@ -275,11 +283,42 @@ async def test_stale_wrapper_from_finished_run_is_suppressed_after_ownership_cha
         == "done-a"
     )
     stale_a_cb = captured["cb"]
-    # This run released the slot; a newer job takes ownership of it.
-    assert pipeline_module._ACTIVE_PROGRESS_OWNER is None
-    pipeline_module._ACTIVE_PROGRESS_OWNER = "job-b-owner"
-
     stale_a_cb(9, 9)
 
     assert events_a == [(1, 1)]
-    pipeline_module._ACTIVE_PROGRESS_OWNER = None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexing_runs_keep_their_own_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent KB adapters must both receive progress during overlap."""
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.02)
+    adapter = ContextVar("test_embedding_adapter", default="")
+    callbacks: dict[str, Any] = {}
+    monkeypatch.setattr(
+        pipeline_module,
+        "set_progress_callback",
+        lambda cb: callbacks.__setitem__(adapter.get(), cb),
+    )
+    events: dict[str, list[tuple[int, int]]] = {"a": [], "b": []}
+
+    async def run(name: str) -> str:
+        adapter.set(name)
+
+        def work() -> str:
+            for batch in range(1, 5):
+                callbacks[name](batch, 4)
+                time.sleep(0.03)
+            return name
+
+        return await pipeline_module._run_with_stall_guard(
+            work,
+            progress_callback=lambda batch, total: events[name].append((batch, total)),
+            stall_timeout=0.5,
+        )
+
+    assert await asyncio.gather(run("a"), run("b")) == ["a", "b"]
+    assert events["a"] == [(batch, 4) for batch in range(1, 5)]
+    assert events["b"] == [(batch, 4) for batch in range(1, 5)]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import Future, ThreadPoolExecutor, wait
 import ipaddress
 import json
 import logging
@@ -86,8 +87,12 @@ _WEB_RISK_TIMEOUT_S = 5.0
 _WEB_RISK_THREAT_TYPES = ("MALWARE", "SOCIAL_ENGINEERING", "UNWANTED_SOFTWARE")
 _WEB_RISK_CACHE_TTL_S = 900.0
 _WEB_RISK_CACHE_MAX = 1024
+_WEB_RISK_BATCH_TIMEOUT_S = 5.5
+_WEB_RISK_MAX_INFLIGHT = 32
 _web_risk_cache: dict[str, tuple[float, bool]] = {}
 _web_risk_cache_lock = threading.Lock()
+_web_risk_inflight: dict[str, Future[bool | None]] = {}
+_web_risk_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="web-risk")
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -286,7 +291,8 @@ def _web_risk_rejections(
     requester = request_web_risk or _request_web_risk
     flagged: set[str] = set()
     now = time.monotonic()
-    pending: list[str] = []
+    futures: dict[str, Future[bool | None]] = {}
+    created: list[tuple[str, Future[bool | None]]] = []
     with _web_risk_cache_lock:
         for url in unique:
             entry = _web_risk_cache.get(url)
@@ -294,21 +300,43 @@ def _web_risk_rejections(
                 if entry[1]:
                     flagged.add(url)
             else:
-                pending.append(url)
-    for url in pending:
-        try:
-            is_flagged = bool(requester(url, api_key=api_key))
-        except Exception as exc:  # noqa: BLE001 — network / JSON / quota quirks
-            _logger.warning("Web Risk lookup skipped after error: %s", exc)
-            continue
-        with _web_risk_cache_lock:
-            if len(_web_risk_cache) >= _WEB_RISK_CACHE_MAX:
-                for stale in list(_web_risk_cache)[: len(_web_risk_cache) // 2]:
-                    _web_risk_cache.pop(stale, None)
-            _web_risk_cache[url] = (time.monotonic(), is_flagged)
-        if is_flagged:
-            flagged.add(url)
+                future = _web_risk_inflight.get(url)
+                if future is None and len(_web_risk_inflight) < _WEB_RISK_MAX_INFLIGHT:
+                    future = _web_risk_executor.submit(_lookup_web_risk, requester, url, api_key)
+                    _web_risk_inflight[url] = future
+                    created.append((url, future))
+                if future is not None:
+                    futures[url] = future
+    for url, future in created:
+        future.add_done_callback(lambda completed, key=url: _cache_web_risk_result(key, completed))
+    if futures:
+        done, _ = wait(set(futures.values()), timeout=_WEB_RISK_BATCH_TIMEOUT_S)
+        for url, future in futures.items():
+            if future in done and future.result():
+                flagged.add(url)
     return flagged
+
+
+def _lookup_web_risk(requester: Any, url: str, api_key: str) -> bool | None:
+    """A failed lookup is unknown, not a safe result to cache."""
+    try:
+        return bool(requester(url, api_key=api_key))
+    except Exception as exc:  # noqa: BLE001 — network / JSON / quota quirks
+        _logger.warning("Web Risk lookup skipped after error: %s", exc)
+        return None
+
+
+def _cache_web_risk_result(url: str, future: Future[bool | None]) -> None:
+    result = future.result()
+    with _web_risk_cache_lock:
+        if _web_risk_inflight.get(url) is future:
+            _web_risk_inflight.pop(url, None)
+        if result is None:
+            return
+        if len(_web_risk_cache) >= _WEB_RISK_CACHE_MAX:
+            for stale in list(_web_risk_cache)[: len(_web_risk_cache) // 2]:
+                _web_risk_cache.pop(stale, None)
+        _web_risk_cache[url] = (time.monotonic(), result)
 
 
 def _reference_text(*, title: str = "", snippet: str = "", content: str = "") -> str:
