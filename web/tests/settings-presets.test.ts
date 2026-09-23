@@ -17,8 +17,8 @@ function locale(name: string): Record<string, string> {
 
 test("preset drafts reuse the apply flow that owns each setting", () => {
   const endpoints = source("lib/settings-extensions.ts");
-  assert.match(endpoints, /"document_parsing": "\/api\/settings\/document-parsing"/);
-  assert.match(endpoints, /enabled_tools: "\/api\/settings\/enabled-tools"/);
+  assert.match(endpoints, /"document-parsing": "\/api\/settings\/document-parsing"/);
+  assert.match(endpoints, /tools: "\/api\/settings\/enabled-tools"/);
 
   const panel = source("components/settings/SettingsPresetsPanel.tsx");
   assert.match(panel, /stagePreset\(preset\.id\)/);

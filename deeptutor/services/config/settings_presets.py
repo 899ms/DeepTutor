@@ -13,8 +13,8 @@ from typing import Any
 
 SETTINGS_PRESETS_SCHEMA_VERSION = "deeptutor.settings-presets/v1"
 
-_DOCUMENT_PARSING_EXTENSION = "document_parsing"
-_ENABLED_TOOLS_EXTENSION = "enabled_tools"
+_DOCUMENT_PARSING_EXTENSION = "document-parsing"
+_ENABLED_TOOLS_EXTENSION = "tools"
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +49,7 @@ class SettingsPreset:
         """Return payload shapes accepted by the existing draft apply flow."""
 
         return {
-            _DOCUMENT_PARSING_EXTENSION: {"engine": self.parser_engine},
+            _DOCUMENT_PARSING_EXTENSION: {"engine": self.parser_engine, "engines": {}},
             _ENABLED_TOOLS_EXTENSION: {"enabled_tools": list(self.tools)},
         }
 

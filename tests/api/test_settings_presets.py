@@ -87,15 +87,15 @@ async def test_staging_a_preset_writes_only_the_reviewable_draft(
     assert guarded == 1
     assert response["preset"]["id"] == "university_study"
     draft = response["draft"]
-    assert draft["extensions"]["document_parsing"] == {"engine": "markitdown"}
-    assert draft["extensions"]["enabled_tools"] == {
+    assert draft["extensions"]["document-parsing"] == {"engine": "markitdown", "engines": {}}
+    assert draft["extensions"]["tools"] == {
         "enabled_tools": ["brainstorm", "web_search", "paper_search", "reason"]
     }
     assert draft["extensions"]["memory"] == {"enabled": False}
     assert draft["catalog"]["services"]["llm"]["profiles"][0]["api_key"] == (CATALOG_SECRET_MASK)
 
     saved = draft_service.load()
-    assert saved["extensions"]["document_parsing"] == draft["extensions"]["document_parsing"]
+    assert saved["extensions"]["document-parsing"] == draft["extensions"]["document-parsing"]
     assert saved["catalog"]["services"]["llm"]["profiles"][0]["api_key"] == "sk-live"
     assert catalog_service.load() == _catalog("sk-live")
 

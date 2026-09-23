@@ -51,15 +51,15 @@ from deeptutor.services.config.settings_draft import (
     merge_draft_secrets,
     redact_draft,
 )
-from deeptutor.services.config.settings_profile import (
-    SettingsProfileError,
-    export_settings_profile,
-    review_settings_profile_import,
-)
 from deeptutor.services.config.settings_presets import (
     SETTINGS_PRESETS_SCHEMA_VERSION,
     get_settings_preset,
     list_settings_presets,
+)
+from deeptutor.services.config.settings_profile import (
+    SettingsProfileError,
+    export_settings_profile,
+    review_settings_profile_import,
 )
 from deeptutor.services.llm.config import clear_llm_config_cache
 from deeptutor.services.model_selection import list_llm_options
@@ -1308,8 +1308,8 @@ async def _stage_settings_preset(
         get_model_catalog_service().load(),
     )
     preset_draft = preset.draft_extensions()
-    tools = preset_draft.get("enabled_tools", {}).get("enabled_tools", [])
-    preset_draft["enabled_tools"]["enabled_tools"] = sanitize_enabled_tools(tools)
+    tools = preset_draft["tools"]["enabled_tools"]
+    preset_draft["tools"]["enabled_tools"] = sanitize_enabled_tools(tools)
     merged["extensions"].update(preset_draft)
 
     return {

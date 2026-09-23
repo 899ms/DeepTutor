@@ -29,8 +29,8 @@ def test_a_preset_has_the_draft_payloads_the_apply_flow_already_writes() -> None
 
     draft = preset.draft_extensions()
 
-    assert draft["document_parsing"] == {"engine": "markitdown"}
-    assert draft["enabled_tools"] == {
+    assert draft["document-parsing"] == {"engine": "markitdown", "engines": {}}
+    assert draft["tools"] == {
         "enabled_tools": ["brainstorm", "web_search", "paper_search", "reason"]
     }
 
