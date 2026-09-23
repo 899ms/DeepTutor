@@ -3,33 +3,28 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { APP_LANGUAGES, type AppLanguage } from "@/i18n/init";
 import { SettingRow, SettingSection, SettingsPageHeader } from "./shared";
 import { useUiSettings } from "@/features/settings/store";
 import { useSettings } from "@/features/settings/store/SettingsStore";
-
-const LANGUAGE_OPTIONS = [
-  { value: "en", labelKey: "language.english" },
-  { value: "zh", labelKey: "language.chinese" },
-  { value: "fr", labelKey: "language.french" },
-] as const;
 
 function LanguageToggle({
   value,
   onChange,
 }: {
   value: string;
-  onChange: (next: (typeof LANGUAGE_OPTIONS)[number]["value"]) => void;
+  onChange: (next: AppLanguage) => void;
 }) {
   const { t } = useTranslation();
   return (
     <div className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5">
-      {LANGUAGE_OPTIONS.map(({ value: option, labelKey }) => (
+      {APP_LANGUAGES.map(({ code, labelKey }) => (
         <button
-          key={option}
-          aria-pressed={value === option}
-          onClick={() => onChange(option)}
+          key={code}
+          aria-pressed={value === code}
+          onClick={() => onChange(code)}
           className={`rounded-md px-2.5 py-1 text-[12px] transition-all ${
-            value === option
+            value === code
               ? "bg-[var(--card)] font-medium text-[var(--foreground)] shadow-sm"
               : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           }`}
