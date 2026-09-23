@@ -7,7 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from starlette.routing import Match
 
+from deeptutor.api.routers.auth import _learning_surface_for_path
 from deeptutor.multi_user.context import (
     get_current_user_or_none,
     reset_current_user,
@@ -48,6 +50,52 @@ def _build_app() -> FastAPI:
     app = FastAPI()
     app.include_router(router, prefix="/api")
     return app
+
+
+@pytest.mark.parametrize(
+    ("path", "route_path", "surface"),
+    [
+        ("/api/knowledge-bases", "/api/knowledge-bases", "reading"),
+        ("/api/knowledge-bases/demo", "/api/knowledge-bases/{kb_name}", "reading"),
+        ("/api/knowledge-bases/demo/files", "/api/knowledge-bases/{kb_name}/files", "reading"),
+        (
+            "/api/knowledge-bases/demo/files/a.pdf",
+            "/api/knowledge-bases/{kb_name}/files/{filename:path}",
+            "reading",
+        ),
+        (
+            "/api/knowledge-bases/demo/file-preview-text/a.pdf",
+            "/api/knowledge-bases/{kb_name}/file-preview-text/{filename:path}",
+            "reading",
+        ),
+        (
+            "/api/knowledge-bases/demo/progress",
+            "/api/knowledge-bases/{kb_name}/progress",
+            "reading",
+        ),
+        ("/api/knowledge-bases/health", "/api/knowledge-bases/health", ""),
+        ("/api/knowledge-bases/configs", "/api/knowledge-bases/configs", ""),
+        (
+            "/api/knowledge-bases/rag-pipelines/lightrag/config",
+            "/api/knowledge-bases/rag-pipelines/lightrag/config",
+            "",
+        ),
+        ("/api/knowledge-bases/demo/config", "/api/knowledge-bases/{kb_name}/config", ""),
+        (
+            "/api/knowledge-bases/demo/github-sources",
+            "/api/knowledge-bases/{kb_name}/github-sources",
+            "",
+        ),
+    ],
+)
+def test_learner_surface_uses_actual_kb_route_template(
+    path: str, route_path: str, surface: str
+) -> None:
+    app = _build_app()
+    scope = {"type": "http", "method": "GET", "path": path, "root_path": ""}
+    matched = next(route for route in app.router.routes if route.matches(scope)[0] is Match.FULL)
+    assert matched.path == route_path
+    assert _learning_surface_for_path(path, "GET", route_path=matched.path) == surface
 
 
 def test_knowledge_source_error_translation_is_consistent_and_sanitized() -> None:

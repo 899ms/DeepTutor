@@ -234,3 +234,64 @@ def test_failed_grant_save_does_not_change_standard_preset(
     _username, updated = get_user_by_id(learner_user_id)
     assert updated.get("preset") == "standard"
     assert load_grant(learner_user_id).get("learning_policy") is None
+
+
+@pytest.mark.parametrize(
+    ("preset_failure", "existing_grant", "status_code"),
+    [("returns_false", True, 409), ("raises", False, 500)],
+)
+def test_failed_preset_update_restores_previous_grant(
+    mu_isolated_root,
+    seed_user,
+    monkeypatch,
+    preset_failure: str,
+    existing_grant: bool,
+    status_code: int,
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from deeptutor.api.routers import multi_user
+    from deeptutor.multi_user.grants import grant_path, load_grant, save_grant
+    from deeptutor.multi_user.identity import get_user_by_id
+
+    seed_user("bootstrap-admin")
+    record = seed_user("student-standard")
+    learner_user_id = record["id"]
+    if existing_grant:
+        save_grant(learner_user_id, {"enabled_tools": ["reason"]})
+    path = grant_path(learner_user_id)
+    previous_grant_text = path.read_text(encoding="utf-8") if path.exists() else None
+    payload = multi_user.GuardianRestrictionsPayload(
+        age_band="13-15",
+        allow_upload=True,
+        allowed_surfaces=["chat", "reading"],
+        extensions=[],
+    )
+
+    def fail_set_preset(_username: str, _preset: str) -> bool:
+        assert load_grant(learner_user_id)["learning_policy"]["age_band"] == "13-15"
+        if preset_failure == "raises":
+            raise OSError("users file is unavailable")
+        return False
+
+    monkeypatch.setattr(multi_user, "set_preset", fail_set_preset)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            multi_user.put_guardian_restrictions(
+                learner_user_id,
+                payload,
+                SimpleNamespace(user_id="u_admin", role="admin"),
+            )
+        )
+
+    assert error.value.status_code == status_code
+    assert "prior grant was restored" in error.value.detail
+    _username, updated = get_user_by_id(learner_user_id)
+    assert updated["preset"] == "standard"
+    if previous_grant_text is None:
+        assert not path.exists()
+    else:
+        assert path.read_text(encoding="utf-8") == previous_grant_text
