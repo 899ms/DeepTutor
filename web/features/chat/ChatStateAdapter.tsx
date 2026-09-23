@@ -2715,7 +2715,7 @@ export function ChatStateAdapterProvider({
       live.sessions[key]?.isStreaming ||
       !["failed", "rejected"].includes(live.sessions[key]?.status ?? "")
     ) return;
-    if (remote.active_turns?.length || remote.status === "completed") {
+    if (remote.active_turns?.length) {
       void loadSessionRef.current?.(session.sessionId);
       return;
     }
@@ -2730,7 +2730,7 @@ export function ChatStateAdapterProvider({
     // A persisted user can go straight through the server's regenerate path.
     // If other rows arrived since this tab's snapshot, show them first.
     if (typeof lastUser.id === "number" && lastUser.id > 0) {
-      if (newRows.length > 0) {
+      if (newRows.length > 0 || remote.status === "completed") {
         void loadSessionRef.current?.(session.sessionId);
       } else {
         regenerateLastMessage();
