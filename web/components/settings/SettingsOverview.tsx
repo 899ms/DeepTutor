@@ -3,37 +3,44 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { APP_LANGUAGES, type AppLanguage } from "@/i18n/init";
+import { APP_LANGUAGES, isAppLanguage, type AppLanguage } from "@/i18n/init";
 import SettingsPresetsPanel from "@/components/settings/SettingsPresetsPanel";
-import { selectClass, SettingRow, SettingSection, SettingsPageHeader } from "./shared";
+import {
+  SettingRow,
+  SettingSection,
+  SettingsPageHeader,
+  selectClass,
+  selectOptionClass,
+} from "./shared";
 import { RESPONSE_LANGUAGE_OPTIONS, useUiSettings } from "@/features/settings/store";
 import { useSettings } from "@/features/settings/store/SettingsStore";
 
-function LanguageToggle({
+function LanguageSelect({
+  label,
   value,
   onChange,
 }: {
+  label: string;
   value: string;
   onChange: (next: AppLanguage) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className="flex gap-0.5 rounded-lg bg-[var(--muted)] p-0.5">
+    <select
+      aria-label={label}
+      className={`${selectClass} min-w-[200px]`}
+      value={value}
+      onChange={(event) => {
+        const next = event.currentTarget.value;
+        if (isAppLanguage(next)) onChange(next);
+      }}
+    >
       {APP_LANGUAGES.map(({ code, labelKey }) => (
-        <button
-          key={code}
-          aria-pressed={value === code}
-          onClick={() => onChange(code)}
-          className={`rounded-md px-2.5 py-1 text-[12px] transition-all ${
-            value === code
-              ? "bg-[var(--card)] font-medium text-[var(--foreground)] shadow-sm"
-              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-          }`}
-        >
+        <option key={code} value={code} className={selectOptionClass}>
           {t(labelKey)}
-        </button>
+        </option>
       ))}
-    </div>
+    </select>
   );
 }
 
@@ -57,7 +64,11 @@ export default function SettingsOverview() {
             "Controls navigation, settings, and status text only.",
           )}
           control={
-            <LanguageToggle value={language} onChange={updateLanguage} />
+            <LanguageSelect
+              label={t("Interface language")}
+              value={language}
+              onChange={updateLanguage}
+            />
           }
         />
         <SettingRow
@@ -67,13 +78,14 @@ export default function SettingsOverview() {
           )}
           control={
             <select
+              aria-label={t("Model output language")}
               value={responseLanguage}
               onChange={(event) =>
                 void updateResponseLanguage(
                   event.target.value as typeof responseLanguage,
                 )
               }
-              className={`${selectClass} min-w-[160px] pr-8`}
+              className={`${selectClass} min-w-[200px] pr-8`}
             >
               {RESPONSE_LANGUAGE_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
