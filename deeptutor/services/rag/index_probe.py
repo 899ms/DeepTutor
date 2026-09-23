@@ -120,8 +120,13 @@ def provider_failure_summary(
     ``versions`` may carry a pre-computed :func:`inspect_kb_versions` result so
     bulk callers (e.g. ``KnowledgeBaseManager.get_info``) do not rescan and
     re-parse every index version just to collect failure text.
+
+    When no version entry exists at all (empty-KB create never wrote an index),
+    return an explicit diagnostic instead of an empty string.
     """
     entries = versions if versions is not None else inspect_kb_versions(kb_dir, provider)
+    if not entries:
+        return "No index version exists yet."
     failures: list[str] = []
     for entry in entries:
         summary = str(entry.get("failure_summary") or "").strip()

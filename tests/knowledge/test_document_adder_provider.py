@@ -124,6 +124,29 @@ def test_document_adder_allows_empty_kb_to_bootstrap(monkeypatch, tmp_path: Path
         assert adder.accepted_indexing_snapshot.vlm is None
 
 
+def test_document_adder_rejects_unready_existing_version(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    kb_dir.mkdir()
+    version_dir = kb_dir / "version-1"
+    version_dir.mkdir()
+    (version_dir / "docstore.json").write_text("{}", encoding="utf-8")
+    (version_dir / "meta.json").write_text(
+        json.dumps({"provider": "llamaindex", "signature": "sig", "version": "version-1"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="not initialized"):
+        DocumentAdder(kb_name="kb", base_dir=str(tmp_path), rag_provider="llamaindex")
+
+
+def test_document_adder_rejects_legacy_rag_storage(tmp_path: Path) -> None:
+    kb_dir = tmp_path / "kb"
+    (kb_dir / "rag_storage").mkdir(parents=True)
+
+    with pytest.raises(ValueError, match="legacy index format"):
+        DocumentAdder(kb_name="kb", base_dir=str(tmp_path), rag_provider="llamaindex")
+
+
 def test_process_new_documents_returns_failures_without_marking_processed(
     monkeypatch, tmp_path: Path
 ) -> None:

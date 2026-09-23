@@ -52,6 +52,17 @@ def test_llamaindex_requires_real_storage_files(tmp_path: Path) -> None:
     assert probe.doc_count == 1
 
 
+def test_empty_kb_reports_no_index_version_exists(tmp_path: Path) -> None:
+    (tmp_path / "raw").mkdir()
+
+    assert inspect_kb_versions(tmp_path, "llamaindex") == []
+    assert has_ready_provider_index(tmp_path, "llamaindex") is False
+    assert provider_failure_summary(tmp_path, "llamaindex") == "No index version exists yet."
+    assert provider_failure_summary(tmp_path, "llamaindex", versions=[]) == (
+        "No index version exists yet."
+    )
+
+
 def test_kb_versions_overrule_fake_llamaindex_ready_marker(tmp_path: Path) -> None:
     version_dir = tmp_path / "version-1"
     version_dir.mkdir()
