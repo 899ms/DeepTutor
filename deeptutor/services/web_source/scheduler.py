@@ -20,7 +20,8 @@ WEB_SYNC_MIN_INTERVAL_HOURS = 1
 WEB_SYNC_MAX_INTERVAL_HOURS = 168
 WEB_SYNC_INTERVAL_HOURS = 24
 WEB_SYNC_CHECK_SECONDS = 15
-WEB_SYNC_LEASE_HOURS = 6
+WEB_SYNC_LEASE_SECONDS = 60
+WEB_SYNC_LEASE_RENEW_SECONDS = 20
 WEB_SYNC_MAX_CONCURRENCY = 2
 
 
@@ -108,6 +109,7 @@ class WebSourceSyncScheduler:
         while self._running:
             try:
                 await self._synchronize_sources()
+                await asyncio.to_thread(self.repo.recover_interrupted, self._runner_id)
                 self._start_due_jobs()
             except Exception:
                 logger.exception("Web source scheduler cycle failed")
@@ -150,30 +152,33 @@ class WebSourceSyncScheduler:
         del manager
         source_keys: set[tuple[str, str, str]] = set()
         sources: dict[tuple[str, str, str], dict[str, Any]] = {}
+        scanned_owner_ids: set[str] = set()
         for owner_id in owner_ids:
+            owner_sources: dict[tuple[str, str, str], dict[str, Any]] = {}
             try:
                 owner_manager = await asyncio.to_thread(self._manager_for_owner, owner_id)
                 for kb_name, source in owner_manager.get_all_web_sources():
-                    if not source.get("enabled", True):
-                        continue
-                    if not source.get("auto_sync_enabled", True):
+                    if not source.get("enabled", True) or not source.get("auto_sync_enabled", True):
                         continue
                     source_id = str(source.get("id") or "")
                     kb_key = str(kb_name)
-                    if not source_id or not kb_key:
-                        continue
-                    key = owner_id, kb_key, source_id
-                    source_keys.add(key)
-                    sources[key] = dict(source)
+                    if source_id and kb_key:
+                        owner_sources[owner_id, kb_key, source_id] = dict(source)
             except Exception:
                 logger.exception("Failed to enumerate web sources for owner %s", owner_id)
+                continue
+            scanned_owner_ids.add(owner_id)
+            sources.update(owner_sources)
+            source_keys.update(owner_sources)
         self._sources = sources
-        await asyncio.to_thread(self.repo.reconcile_sources, source_keys)
+        await asyncio.to_thread(
+            self.repo.reconcile_sources, source_keys, scanned_owner_ids=scanned_owner_ids
+        )
 
     def _start_due_jobs(self) -> None:
         for job in self.repo.due_jobs():
             key = self.repo.key(job)
-            if key in self._run_tasks:
+            if key in self._run_tasks or key not in self._sources:
                 continue
             if len(self._run_tasks) >= self._max_concurrency:
                 return
@@ -193,18 +198,20 @@ class WebSourceSyncScheduler:
         from deeptutor.services.web_source.sync import sync_source
 
         key = self.repo.key(scheduled)
-        lease_until = _now_ms() + _hours_ms(WEB_SYNC_LEASE_HOURS)
+        lease_until = _now_ms() + WEB_SYNC_LEASE_SECONDS * 1000
         claimed = await asyncio.to_thread(
             self.repo.claim,
             scheduled,
-            runner_id=self._runner_id,
+            runner_id=f"{self._runner_id}:{uuid.uuid4().hex}",
             lease_until_ms=lease_until,
         )
         if claimed is None:
             return
         source = self._sources.get(key)
         if source is None:
-            self.repo.mark_cancelled(claimed)
+            # A scan may have failed after this job was queued. Keep the job
+            # retryable until its owner's inventory is read successfully.
+            self.repo.mark_interrupted(claimed)
             return
 
         user = (
@@ -220,6 +227,11 @@ class WebSourceSyncScheduler:
         if user.scope.kind == "user":
             ensure_scope_workspace(user.scope)
         token = set_current_user(user)
+        owner_task = asyncio.current_task()
+        assert owner_task is not None
+        lease_task = asyncio.create_task(
+            self._renew_lease(claimed, owner_task), name=f"web-source-sync:lease:{key[2]}"
+        )
         try:
             current = await asyncio.to_thread(self.repo.get, key)
             if current is not None and current.cancel_requested:
@@ -242,13 +254,29 @@ class WebSourceSyncScheduler:
             else:
                 self._mark_failure(claimed, source, result.error or "Web synchronization failed")
         except asyncio.CancelledError:
-            self.repo.mark_cancelled(claimed, _now_ms())
+            current = self.repo.get(key)
+            if current is not None and current.cancel_requested:
+                self.repo.mark_cancelled(claimed, _now_ms())
+            else:
+                self.repo.mark_interrupted(claimed)
             raise
         except Exception as exc:
             logger.exception("Scheduled web source sync failed for %s", source.get("url"))
             self._mark_failure(claimed, source, str(exc))
         finally:
+            lease_task.cancel()
+            await asyncio.gather(lease_task, return_exceptions=True)
             reset_current_user(token)
+
+    async def _renew_lease(self, job: WebSourceSyncJob, owner_task: asyncio.Task[None]) -> None:
+        while True:
+            await asyncio.sleep(WEB_SYNC_LEASE_RENEW_SECONDS)
+            renewed = await asyncio.to_thread(
+                self.repo.renew_lease, job, _now_ms() + WEB_SYNC_LEASE_SECONDS * 1000
+            )
+            if not renewed:
+                owner_task.cancel()
+                return
 
     def _mark_failure(
         self,

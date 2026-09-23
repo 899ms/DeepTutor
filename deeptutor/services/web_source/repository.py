@@ -110,8 +110,13 @@ class SQLiteWebSourceSyncRepository:
     def _now_ms(self) -> int:
         return int(time.time() * 1000)
 
-    def reconcile_sources(self, source_keys: set[tuple[str, str, str]]) -> None:
-        """Create missing rows and remove jobs whose source no longer exists."""
+    def reconcile_sources(
+        self,
+        source_keys: set[tuple[str, str, str]],
+        *,
+        scanned_owner_ids: set[str] | None = None,
+    ) -> None:
+        """Reconcile only owners whose source inventory was read successfully."""
         now = self._now_ms()
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
@@ -134,6 +139,8 @@ class SQLiteWebSourceSyncRepository:
                         (owner_id, kb_name, source_id, now, now),
                     )
                 for owner_id, kb_name, source_id in existing - source_keys:
+                    if scanned_owner_ids is not None and owner_id not in scanned_owner_ids:
+                        continue
                     connection.execute(
                         """
                         DELETE FROM web_source_sync_jobs
@@ -260,27 +267,44 @@ class SQLiteWebSourceSyncRepository:
                 connection.execute("ROLLBACK")
                 raise
 
+    def renew_lease(self, job: WebSourceSyncJob, lease_until_ms: int) -> bool:
+        """Extend only the still-owned, unexpired claim."""
+        now = self._now_ms()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE web_source_sync_jobs
+                   SET lease_until_ms=?, updated_at_ms=?
+                 WHERE owner_id=? AND kb_name=? AND source_id=?
+                   AND state='running' AND runner_id=? AND lease_until_ms>?
+                """,
+                (lease_until_ms, now, *self.key(job), job.runner_id, now),
+            )
+            return int(cursor.rowcount or 0) == 1
+
     def _update(
         self,
         job: WebSourceSyncJob,
         **fields: Any,
-    ) -> None:
+    ) -> bool:
         assignments = list(fields)
         if not assignments:
-            return
+            return False
         fields["updated_at_ms"] = self._now_ms()
         assignments.append("updated_at_ms")
         values = list(fields.values())
         set_sql = ", ".join(f"{name}=?" for name in assignments)
         with self._connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 f"""
                 UPDATE web_source_sync_jobs
                    SET {set_sql}
                  WHERE owner_id=? AND kb_name=? AND source_id=?
+                   AND state='running' AND runner_id=? AND lease_until_ms>?
                 """,
-                (*values, *self.key(job)),
+                (*values, *self.key(job), job.runner_id, self._now_ms()),
             )
+            return int(cursor.rowcount or 0) == 1
 
     def mark_success(self, job: WebSourceSyncJob, next_run_at_ms: int) -> None:
         self._update(
@@ -314,6 +338,17 @@ class SQLiteWebSourceSyncRepository:
             lease_until_ms=None,
         )
 
+    def mark_interrupted(self, job: WebSourceSyncJob) -> None:
+        self._update(
+            job,
+            state="interrupted",
+            next_run_at_ms=self._now_ms(),
+            error="Synchronization was interrupted",
+            cancel_requested=False,
+            runner_id="",
+            lease_until_ms=None,
+        )
+
     def mark_cancelled(self, job: WebSourceSyncJob, next_run_at_ms: int | None = None) -> None:
         now = self._now_ms()
         with self._connect() as connection:
@@ -324,8 +359,9 @@ class SQLiteWebSourceSyncRepository:
                        lease_until_ms=NULL, last_run_at_ms=?, updated_at_ms=?,
                        next_run_at_ms=COALESCE(?, next_run_at_ms)
                  WHERE owner_id=? AND kb_name=? AND source_id=?
+                   AND state='running' AND runner_id=? AND lease_until_ms>?
                 """,
-                (now, now, next_run_at_ms, *self.key(job)),
+                (now, now, next_run_at_ms, *self.key(job), job.runner_id, now),
             )
 
     def request_cancel(self, job_key: tuple[str, str, str]) -> bool:
@@ -395,6 +431,7 @@ class SQLiteWebSourceSyncRepository:
                        cancel_requested=0, runner_id='', lease_until_ms=NULL,
                        updated_at_ms=?
                  WHERE owner_id=? AND kb_name=? AND source_id=?
+                   AND state IN ('error', 'interrupted', 'cancelled')
                 """,
                 (now, now, *job_key),
             )
