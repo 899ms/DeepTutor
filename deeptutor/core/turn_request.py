@@ -169,6 +169,9 @@ class TurnRequest(BaseModel):
     course_id: str | None = None
     persist_user_message: bool = True
     regenerate: bool = False
+    # A saved failed-turn Resend repeats the old request without changing the
+    # conversation's current settings for future turns.
+    preserve_session_preferences: bool = False
     # SQLite message rowids are integers; PocketBase message record ids are
     # opaque strings. Preserve either form in the SESSION event for clients.
     regenerated_from_message_id: int | str | None = None

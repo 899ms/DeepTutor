@@ -322,6 +322,7 @@ class TestRegenerateLastTurn:
         payload = recorder.calls[0]
         assert "replay_snapshot" not in payload
         if not replay_snapshot:
+            assert "preserve_session_preferences" not in payload
             assert payload["capability"] == "chat"
             assert payload["tools"] == ["brainstorm"]
             assert payload["knowledge_bases"] == ["new-kb"]
@@ -331,6 +332,7 @@ class TestRegenerateLastTurn:
             return
 
         assert payload["capability"] == "deep_solve"
+        assert payload["preserve_session_preferences"] is True
         assert payload["tools"] == ["web_search"]
         assert payload["knowledge_bases"] == ["old-kb"]
         assert payload["language"] == "zh"
@@ -533,7 +535,7 @@ class TestRegenerateLastTurn:
                     budget=0,
                 )
 
-        responses = iter(["original answer", "regenerated answer"])
+        responses = iter(["original answer", "regenerated answer", "resent answer"])
 
         class FakeOrchestrator:
             async def handle(self, _context):
@@ -608,6 +610,17 @@ class TestRegenerateLastTurn:
         assert after[1]["content"] == "regenerated answer"
         # Memory refresh count must not increase on regenerate.
         assert len(refresh_calls) == first_turn_refresh_count
+
+        # Resend replays the saved request, but a setting changed since that
+        # request must remain the conversation setting for later turns.
+        await store.update_session_preferences(sid, {"language": "zh"})
+        _, resend_turn = await runtime.regenerate_last_turn(
+            sid, overrides={"replay_snapshot": True}
+        )
+        async for _ in runtime.subscribe_turn(resend_turn["id"], after_seq=0):
+            pass
+        assert (await store.get_session(sid))["preferences"]["language"] == "zh"
+        assert (await store.get_messages(sid))[-1]["content"] == "resent answer"
 
     def test_overrides_take_precedence(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(store)

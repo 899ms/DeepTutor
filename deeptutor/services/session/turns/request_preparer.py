@@ -637,7 +637,8 @@ class TurnRequestPreparer:
                     "reading_material_id": "",
                 }
             )
-        await self.store.update_session_preferences(session["id"], preference_update)
+        if not payload.get("preserve_session_preferences"):
+            await self.store.update_session_preferences(session["id"], preference_update)
         try:
             if lease is None:
                 turn = await self.store.create_turn(session["id"], capability=capability)
@@ -990,6 +991,7 @@ class TurnRequestPreparer:
             payload["llm_selection"] = llm_selection
 
         if replay_snapshot:
+            payload["preserve_session_preferences"] = True
             # The ordinary Regenerate path intentionally uses current session
             # preferences for many fields. Resend instead repeats the failed
             # message's saved request. Keys absent from an older snapshot keep
