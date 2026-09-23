@@ -155,6 +155,8 @@ export interface LightRagConfig {
   llm_model_max_async: number;
   /** Extra extraction passes per chunk, to recover missed entities. */
   entity_extract_max_gleaning: number;
+  /** Per-call timeout for LightRAG's LLM requests, in seconds. */
+  llm_timeout: number;
   /** Query model and default indexing selection; empty uses the active chat model. */
   llm_profile_id: string;
   llm_model_id: string;
