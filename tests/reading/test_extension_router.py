@@ -140,6 +140,43 @@ def test_selection_requirement_rejects_unverified_text(material, monkeypatch):
     assert response.status_code == 400
 
 
+def test_selection_matches_across_line_breaks_the_text_layer_dropped(monkeypatch, tmp_path):
+    # Margin line numbers: extracted onto their own lines, but the browser's
+    # selection glues each one to the word before it.
+    monkeypatch.setenv("DEEPTUTOR_HOME", str(tmp_path))
+    PathService.reset_instance()
+    source = tmp_path / "paper.txt"
+    source.write_text(
+        "applications for Large Language\n1\nModels (LLMs). However, current LLMs rely on "
+        "static pre-training knowledge\n2\nand lack adaptation.",
+        encoding="utf-8",
+    )
+    manifest = ReadingStore().ingest(source)
+    captured = {}
+
+    def run(_action, context):
+        captured.update(context.model_dump())
+        return ReadingExtensionResult(type="card", payload={"body": "ok"})
+
+    client = _client(monkeypatch, _extension(run, requires=("selection",)))
+    try:
+        response = client.post(
+            f"/api/reading/materials/{manifest.material_id}/extensions/sample/actions/open",
+            json={
+                "locator": 1,
+                "selection": "Large Language1 Models (LLMs). However, current LLMs rely on "
+                "static pre-training knowledge2 and lack",
+            },
+        )
+    finally:
+        PathService.reset_instance()
+    assert response.status_code == 200, response.text
+    assert captured["selection"] == (
+        "Large Language 1 Models (LLMs). However, current LLMs rely on "
+        "static pre-training knowledge 2 and lack"
+    )
+
+
 def test_oversized_unit_returns_protocol_error(material, monkeypatch):
     unit_path = ReadingStore().root / material.material_id / "units" / "0001.txt"
     unit_path.write_text("x" * 60_001, encoding="utf-8")

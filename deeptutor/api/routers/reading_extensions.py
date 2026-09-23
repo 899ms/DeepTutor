@@ -80,7 +80,27 @@ def _normal(value: str) -> str:
 
 def _verified_selection(candidate: str, unit_text: str) -> str:
     value = _normal(candidate)
-    return value if value and value in _normal(unit_text) else ""
+    if not value:
+        return ""
+    unit = _normal(unit_text)
+    if value in unit:
+        return value
+    # A PDF's text layer and its extracted text disagree about where the
+    # breaks go: margin line numbers the extractor put on their own lines
+    # ("Language\n1\nModels") reach the browser glued to the word before them
+    # ("Language1 Models"). Whitespace carries no content, so match without
+    # it, and hand the extension the material's own spelling of the span.
+    compact: list[str] = []
+    positions: list[int] = []
+    for index, character in enumerate(unit):
+        if not character.isspace():
+            compact.append(character)
+            positions.append(index)
+    needle = re.sub(r"\s+", "", value)
+    found = "".join(compact).find(needle)
+    if found < 0:
+        return ""
+    return unit[positions[found] : positions[found + len(needle) - 1] + 1]
 
 
 def _discard_late_worker_result(worker: asyncio.Future) -> None:

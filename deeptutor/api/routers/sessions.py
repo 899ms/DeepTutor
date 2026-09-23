@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
 
 from deeptutor.learning.storage import LearningStore
+from deeptutor.reading.catalog_store import ReadingCatalogStore
 from deeptutor.response_languages import validate_reply_language_override
 from deeptutor.services.session import get_session_store, get_sqlite_session_store
 from deeptutor.services.session.organization import (
@@ -248,6 +249,12 @@ async def rename_session(session_id: str, payload: SessionRenameRequest):
     updated = await store.update_session_title(session_id, payload.title)
     if not updated:
         raise HTTPException(status_code=404, detail="Session not found")
+    # The reader keeps its own list of a collection's conversations; the
+    # sidebar is where they are renamed, so the list has to hear about it.
+    try:
+        await asyncio.to_thread(ReadingCatalogStore().retitle_session, session_id, payload.title)
+    except Exception:
+        logger.exception("failed to retitle reading conversation %s", session_id)
     session = await store.get_session(session_id)
     return {"session": session}
 
@@ -418,6 +425,10 @@ async def _cleanup_deleted_session(session_id: str) -> None:
         await get_attachment_store().delete_session(session_id)
     except Exception:
         logger.exception("failed to clean up attachments for session %s", session_id)
+    try:
+        await asyncio.to_thread(ReadingCatalogStore().forget_session, session_id)
+    except Exception:
+        logger.exception("failed to detach reading collections for session %s", session_id)
 
 
 @router.post("/{session_id}/restore")
