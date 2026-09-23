@@ -35,9 +35,30 @@ _TYPE_DIFFICULTY: dict[KnowledgeType, float] = {
 }
 
 DEFAULT_DESIRED_RETENTION = 0.9
+MIN_DESIRED_RETENTION = 0.7
+MAX_DESIRED_RETENTION = 0.99
 _MIN_STABILITY_DAYS = 0.5
 _FAIL_QUALITY = 0.5
 _EPS = 1e-6
+# Answers repeated before the next due time within one study session are
+# practice, not evidence of another durable retrieval (#1541).
+_SAME_SESSION_DAYS = 0.25
+_EVIDENCE_SOURCE_LABELS = {
+    "deep_question": "Question Bank",
+    "immersive_reading": "Reading",
+    "book": "Book",
+    "partner_chat": "Study Partner",
+    "import": "Imported",
+}
+
+
+def validate_desired_retention(value: float) -> float:
+    desired = float(value)
+    if not math.isfinite(desired) or not MIN_DESIRED_RETENTION <= desired <= MAX_DESIRED_RETENTION:
+        raise ValueError(
+            f"desired_retention must be between {MIN_DESIRED_RETENTION} and {MAX_DESIRED_RETENTION}"
+        )
+    return desired
 
 
 class RetentionScheduler(Protocol):
@@ -46,7 +67,11 @@ class RetentionScheduler(Protocol):
     """
 
     def get_initial_state(
-        self, knowledge_type: KnowledgeType, *, now: float | None = None
+        self,
+        knowledge_type: KnowledgeType,
+        *,
+        now: float | None = None,
+        desired_retention: float | None = None,
     ) -> RepetitionState: ...
 
     def schedule_review(
@@ -79,6 +104,8 @@ class RetentionScheduler(Protocol):
         evidence: list[LearningEvidence],
         *,
         now: float | None = None,
+        desired_retention: float | None = None,
+        initial_state: RepetitionState | None = None,
     ) -> RepetitionState: ...
 
 
@@ -97,9 +124,10 @@ def review_sort_key(task: ReviewTask, *, now: float) -> tuple[float, float, int]
 
 
 class SpacedRepetitionScheduler:
-    def __init__(self) -> None:
+    def __init__(self, *, desired_retention: float = DEFAULT_DESIRED_RETENTION) -> None:
         # When True, intervals are in seconds instead of days (for testing)
         self.DEBUG_MODE: bool = os.environ.get("LEARNING_DEBUG", "").lower() in ("1", "true", "yes")
+        self.desired_retention = validate_desired_retention(desired_retention)
 
     def _seconds_per_unit(self) -> float:
         return 1.0 if self.DEBUG_MODE else 86400.0
@@ -139,12 +167,20 @@ class SpacedRepetitionScheduler:
         return state
 
     def get_initial_state(
-        self, knowledge_type: KnowledgeType, *, now: float | None = None
+        self,
+        knowledge_type: KnowledgeType,
+        *,
+        now: float | None = None,
+        desired_retention: float | None = None,
     ) -> RepetitionState:
         intervals = INTERVAL_SEQUENCES[knowledge_type]
         first_interval = float(intervals[0])
         moment = time.time() if now is None else now
-        desired = DEFAULT_DESIRED_RETENTION
+        desired = (
+            self.desired_retention
+            if desired_retention is None
+            else validate_desired_retention(desired_retention)
+        )
         return RepetitionState(
             interval_index=0,
             consecutive_correct=0,
@@ -179,7 +215,7 @@ class SpacedRepetitionScheduler:
         now: float | None = None,
     ) -> RepetitionState:
         self.hydrate(state, knowledge_type)
-        moment = time.time() if now is None else now
+        moment = evidence.timestamp if now is None else now
         quality = _resolved_quality(evidence)
         intervals = INTERVAL_SEQUENCES[knowledge_type]
         max_index = len(intervals) - 1
@@ -195,6 +231,19 @@ class SpacedRepetitionScheduler:
             if state.last_review_at is not None
             else 0.0
         )
+        if (
+            quality >= _FAIL_QUALITY
+            and state.last_review_at is not None
+            and elapsed_days < _SAME_SESSION_DAYS
+            and moment < state.next_review_at
+        ):
+            # Repeated practice refreshes recall, but must not repeatedly
+            # multiply stability or postpone the original review deadline.
+            state.review_count += 1
+            state.last_review_at = moment
+            state.retrievability = 1.0
+            state.consecutive_wrong = 0
+            return state
         spacing_ratio = min(elapsed_days / previous_stability, 4.0)
 
         # Difficulty is an item/learner estimate, not the knowledge-type
@@ -281,6 +330,7 @@ class SpacedRepetitionScheduler:
         kp_id: str,
         *,
         now: float | None = None,
+        latest_evidence: LearningEvidence | None = None,
     ) -> str:
         moment = time.time() if now is None else now
         unit = self._seconds_per_unit()
@@ -303,6 +353,10 @@ class SpacedRepetitionScheduler:
             parts.append(f"{state.lapse_count} lapse{'s' if state.lapse_count != 1 else ''}")
         elif failures:
             parts.append("recent failure")
+        if latest_evidence is not None:
+            source = _EVIDENCE_SOURCE_LABELS.get(latest_evidence.source)
+            if source is not None:
+                parts.append(f"latest {source} assessment: {latest_evidence.result}")
         return "; ".join(parts) + "."
 
     def get_due_tasks(self, progress: LearningProgress, max_tasks: int = 5) -> list[ReviewTask]:
@@ -316,12 +370,18 @@ class SpacedRepetitionScheduler:
     ) -> list[ReviewTask]:
         moment = time.time() if now is None else now
         error_kps = _error_kp_ids(progress)
+        latest_evidence: dict[str, LearningEvidence] = {}
+        for event in progress.learning_evidence:
+            prior = latest_evidence.get(event.knowledge_point_id)
+            if prior is None or event.timestamp >= prior.timestamp:
+                latest_evidence[event.knowledge_point_id] = event
         tasks: list[ReviewTask] = []
         for kp_id, state in progress.repetition_states.items():
             kp_type = progress.knowledge_types.get(kp_id, KnowledgeType.MEMORY)
             self.hydrate(state, kp_type)
             priority = 1 if kp_id in error_kps else _TYPE_PRIORITY[kp_type]
             risk = self.forgetting_risk(state, progress, kp_id, now=moment)
+            evidence = latest_evidence.get(kp_id)
             tasks.append(
                 ReviewTask(
                     id=f"review_{kp_id}",
@@ -331,11 +391,48 @@ class SpacedRepetitionScheduler:
                     priority=priority,
                     state=state,
                     forgetting_risk=round(risk, 4),
-                    reason=self.review_reason(state, progress, kp_id, now=moment),
+                    reason=self.review_reason(
+                        state, progress, kp_id, now=moment, latest_evidence=evidence
+                    ),
+                    evidence_source=evidence.source if evidence is not None else "",
+                    evidence_id=evidence.evidence_id if evidence is not None else "",
                 )
             )
         tasks.sort(key=lambda t: review_sort_key(t, now=moment))
         return tasks
+
+    def set_desired_retention(
+        self,
+        progress: LearningProgress,
+        desired_retention: float,
+        *,
+        now: float | None = None,
+    ) -> None:
+        """Change one path's target without rewriting its evidence history.
+
+        Rescale the already scheduled interval, including a shorter failure
+        retry. Do not count a settings edit as an assessment (#1541).
+        """
+        desired = validate_desired_retention(desired_retention)
+        moment = time.time() if now is None else now
+        for kp_id, state in progress.repetition_states.items():
+            kp_type = progress.knowledge_types.get(kp_id, KnowledgeType.MEMORY)
+            self.hydrate(state, kp_type)
+            old_desired = validate_desired_retention(state.desired_retention)
+            ratio = -math.log(desired) / -math.log(old_desired)
+            anchor = state.last_review_at
+            if anchor is not None:
+                state.next_review_at = anchor + (state.next_review_at - anchor) * ratio
+                interval = (state.next_review_at - anchor) / self._seconds_per_unit()
+                intervals = INTERVAL_SEQUENCES[kp_type]
+                state.interval_index = _snap_interval_index(intervals, interval, len(intervals) - 1)
+            elif state.next_review_at > moment:
+                # Legacy snapshots may lack a review anchor; preserve their
+                # overdue position and only scale remaining future time.
+                state.next_review_at = moment + (state.next_review_at - moment) * ratio
+            state.desired_retention = desired
+        progress.desired_retention = desired
+        progress.review_queue = self.build_review_queue(progress, now=moment)
 
     def replay(
         self,
@@ -343,10 +440,25 @@ class SpacedRepetitionScheduler:
         evidence: list[LearningEvidence],
         *,
         now: float | None = None,
+        desired_retention: float | None = None,
+        initial_state: RepetitionState | None = None,
     ) -> RepetitionState:
+        if initial_state is not None:
+            if desired_retention is not None:
+                raise ValueError("initial_state already contains desired_retention")
+            state = initial_state.model_copy(deep=True)
+            for event in evidence:
+                self.schedule_review(state, knowledge_type, event, now=event.timestamp)
+            return state
         if not evidence:
-            return self.get_initial_state(knowledge_type, now=now)
-        state = self.get_initial_state(knowledge_type, now=evidence[0].timestamp)
+            return self.get_initial_state(
+                knowledge_type, now=now, desired_retention=desired_retention
+            )
+        state = self.get_initial_state(
+            knowledge_type,
+            now=evidence[0].timestamp,
+            desired_retention=desired_retention,
+        )
         for event in evidence:
             self.schedule_review(state, knowledge_type, event, now=event.timestamp)
         return state

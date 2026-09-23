@@ -161,6 +161,67 @@ class TestSaveLoad:
             "incorrect",
         ]
 
+    def test_unrelated_path_save_does_not_write_historical_evidence(self, store):
+        from deeptutor.learning.models import LearningEvidence
+
+        progress = LearningProgress(book_id="unchanged-evidence")
+        progress.learning_evidence = [
+            LearningEvidence(knowledge_point_id="kp1", quality=0.5, timestamp=float(index))
+            for index in range(100)
+        ]
+        store.save(progress)
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute(
+                """
+                CREATE TRIGGER reject_unchanged_evidence_write
+                BEFORE INSERT ON mastery_learning_evidence
+                WHEN NEW.path_id = 'unchanged-evidence'
+                BEGIN SELECT RAISE(ABORT, 'unrelated write touched evidence'); END
+                """
+            )
+            conn.execute(
+                """
+                CREATE TRIGGER reject_unchanged_evidence_update
+                BEFORE UPDATE ON mastery_learning_evidence
+                WHEN NEW.path_id = 'unchanged-evidence'
+                BEGIN SELECT RAISE(ABORT, 'unrelated write touched evidence'); END
+                """
+            )
+            conn.execute(
+                """
+                CREATE TRIGGER reject_unchanged_evidence_delete
+                BEFORE DELETE ON mastery_learning_evidence
+                WHEN OLD.path_id = 'unchanged-evidence'
+                BEGIN SELECT RAISE(ABORT, 'unrelated write touched evidence'); END
+                """
+            )
+        progress.name = "renamed"
+        store.save(progress)
+        assert store.load("unchanged-evidence").name == "renamed"
+        assert store.count_learning_evidence("unchanged-evidence") == 100
+
+    def test_explicit_evidence_projection_rebuild_repairs_missing_rows(self, store):
+        from deeptutor.learning.models import LearningEvidence
+
+        progress = LearningProgress(book_id="rebuild-evidence")
+        progress.learning_evidence = [
+            LearningEvidence(knowledge_point_id="kp1", timestamp=float(index)) for index in range(3)
+        ]
+        store.save(progress)
+        with sqlite3.connect(store.db_path) as conn:
+            conn.execute(
+                "DELETE FROM mastery_learning_evidence WHERE path_id = ? AND ordinal = 1",
+                ("rebuild-evidence",),
+            )
+        assert store.count_learning_evidence("rebuild-evidence") == 2
+        store.rebuild_learning_evidence_projection("rebuild-evidence")
+        assert store.count_learning_evidence("rebuild-evidence") == 3
+        assert [event.timestamp for event in store.list_learning_evidence("rebuild-evidence")] == [
+            2.0,
+            1.0,
+            0.0,
+        ]
+
     def test_existing_paths_receive_evidence_projection_on_upgrade(self, store):
         from deeptutor.learning.models import LearningEvidence
 
@@ -205,6 +266,49 @@ class TestSaveLoad:
         assert state.next_review_at == 123456.0
         assert state.stability == 0.0
         assert loaded.learning_evidence == []
+
+    def test_legacy_path_review_survives_restart_with_evidence_and_queue(self, store, tmp_path):
+        from deeptutor.learning.models import LearningEvidence
+        from deeptutor.learning.scheduler import SpacedRepetitionScheduler
+
+        now = 1_700_000_000.0
+        (tmp_path / "legacy-review.json").write_text(
+            json.dumps(
+                {
+                    "book_id": "legacy-review",
+                    "mastery_levels": {"kp1": 0.6, "kp2": 0.3},
+                    "knowledge_types": {"kp1": "memory", "kp2": "concept"},
+                    "repetition_states": {
+                        "kp1": {"interval_index": 2, "next_review_at": now},
+                        "kp2": {"interval_index": 1, "next_review_at": now - 86400},
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        progress = store.load("legacy-review")
+        assert progress is not None
+        scheduler = SpacedRepetitionScheduler()
+        event = LearningEvidence(
+            knowledge_point_id="kp1",
+            timestamp=now + 86400,
+            result="correct",
+            quality=0.9,
+        )
+        progress.learning_evidence.append(event)
+        scheduler.schedule_review(progress.repetition_states["kp1"], KnowledgeType.MEMORY, event)
+        progress.review_queue = scheduler.build_review_queue(progress, now=event.timestamp)
+        expected_order = [task.knowledge_point_id for task in progress.review_queue]
+        expected_state = progress.repetition_states["kp1"].model_dump()
+        store.save(progress)
+
+        restarted = LearningStore(root=tmp_path).load("legacy-review")
+        assert restarted is not None
+        assert restarted.mastery_levels == {"kp1": 0.6, "kp2": 0.3}
+        assert restarted.repetition_states["kp1"].model_dump() == expected_state
+        assert [task.knowledge_point_id for task in restarted.review_queue] == expected_order
+        assert [item.model_dump() for item in restarted.learning_evidence] == [event.model_dump()]
+        assert store.count_learning_evidence("legacy-review") == 1
 
     def test_updated_at_auto_updates(self, store):
         lp = LearningProgress(book_id="book1")

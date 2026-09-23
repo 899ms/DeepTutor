@@ -463,6 +463,13 @@ export interface TopicReview {
   desired_retention: number;
   lapse_count: number;
   recent_failure: boolean;
+  evidence_source?: string;
+  evidence_id?: string;
+}
+
+export interface MasteryReviewSettings {
+  desired_retention: number;
+  scope: "path";
 }
 
 export interface MasteryTopic extends LearningOrigin {
@@ -474,6 +481,7 @@ export interface MasteryTopic extends LearningOrigin {
   next: NextStep;
   map: MasteryMap;
   reviews: TopicReview[];
+  review_settings?: MasteryReviewSettings;
   /** Null until the tutor has asked the learner about themselves. */
   learner_profile: LearnerProfile | null;
   session_count: number;
@@ -638,6 +646,21 @@ export function fetchMasteryTopic(
     `/api/mastery-paths/topics/${encodeURIComponent(pathId)}`,
     init,
     "load topic",
+  );
+}
+
+export function updateMasteryReviewSettings(
+  pathId: string,
+  desiredRetention: number,
+): Promise<MasteryTopic> {
+  return masteryJson(
+    `/api/mastery-paths/topics/${encodeURIComponent(pathId)}/review-settings`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ desired_retention: desiredRetention }),
+    },
+    "update review target",
   );
 }
 

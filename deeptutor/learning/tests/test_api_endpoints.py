@@ -1,6 +1,7 @@
 """API endpoint tests for the mastery_path router."""
 
 import json
+import time
 from unittest.mock import AsyncMock, patch
 
 from fastapi import FastAPI
@@ -8,7 +9,13 @@ from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers.mastery_path import router, ws_router
-from deeptutor.learning.models import LearningProgress, PendingQuestion, QuizAttempt
+from deeptutor.learning.models import (
+    KnowledgeType,
+    LearningProgress,
+    PendingQuestion,
+    QuizAttempt,
+)
+from deeptutor.learning.scheduler import SpacedRepetitionScheduler
 from deeptutor.learning.service import LearningService
 from deeptutor.learning.storage import LearningStore
 
@@ -46,6 +53,58 @@ def _module_payload(module_id: str = "m1", kp_id: str = "kp1") -> dict:
             {"id": kp_id, "name": kp_id.upper(), "type": "concept", "module_id": module_id}
         ],
     }
+
+
+def test_path_retention_setting_persists_and_reschedules_review(client, tmp_path):
+    store = LearningStore(root=tmp_path)
+    progress = LearningProgress(book_id="srs-path", name="SRS path")
+    progress.knowledge_types["kp1"] = KnowledgeType.CONCEPT
+    scheduler = SpacedRepetitionScheduler()
+    state = scheduler.get_initial_state(KnowledgeType.CONCEPT, now=time.time())
+    state.last_review_at = time.time()
+    state.next_review_at = state.last_review_at + 4 * 86400
+    progress.repetition_states["kp1"] = state
+    store.save(progress)
+    old_due = state.next_review_at
+
+    response = client.put(
+        "/api/mastery-paths/topics/srs-path/review-settings",
+        json={"desired_retention": 0.97},
+    )
+    assert response.status_code == 200
+    assert response.json()["review_settings"] == {
+        "desired_retention": 0.97,
+        "scope": "path",
+    }
+    reloaded = LearningStore(root=tmp_path).load("srs-path")
+    assert reloaded is not None
+    assert reloaded.desired_retention == 0.97
+    assert reloaded.repetition_states["kp1"].desired_retention == 0.97
+    assert reloaded.repetition_states["kp1"].next_review_at < old_due
+    assert client.get("/api/mastery-paths/topics/srs-path/review-settings").json() == {
+        "desired_retention": 0.97,
+        "scope": "path",
+    }
+
+
+@pytest.mark.parametrize("invalid", [0.5, 1.0, "NaN"])
+def test_path_retention_setting_rejects_invalid_values(client, tmp_path, invalid):
+    store = LearningStore(root=tmp_path)
+    store.save(LearningProgress(book_id="srs-path"))
+    response = client.put(
+        "/api/mastery-paths/topics/srs-path/review-settings",
+        json={"desired_retention": invalid},
+    )
+    assert response.status_code == 422
+    assert store.load("srs-path").desired_retention == 0.9
+
+
+def test_path_retention_setting_requires_existing_path(client):
+    response = client.put(
+        "/api/mastery-paths/topics/missing/review-settings",
+        json={"desired_retention": 0.92},
+    )
+    assert response.status_code == 404
 
 
 # -- GET /progress (list_all) --------------------------------------------

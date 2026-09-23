@@ -628,6 +628,8 @@ class LearningStore:
         conn: sqlite3.Connection,
         path_id: str,
         progress: LearningProgress,
+        *,
+        previous_evidence: list[dict[str, Any]] | None = None,
     ) -> None:
         """Mirror aggregate evidence into the query/index table.
 
@@ -637,17 +639,28 @@ class LearningStore:
         inventing a second evidence identity. Ordinary appends update only
         new rows; shrinking or repairing history removes only the stale tail.
         """
-        existing = {
-            int(row["ordinal"]): str(row["evidence_json"])
-            for row in conn.execute(
-                "SELECT ordinal, evidence_json FROM mastery_learning_evidence WHERE path_id = ?",
-                (path_id,),
-            ).fetchall()
-        }
+        # Ordinary writes already loaded the previous aggregate. Compare that
+        # in-memory snapshot, not a second SELECT of every projection row on
+        # every unrelated path edit. Migration/explicit repair passes None and
+        # reconciles against the projection itself.
+        existing = (
+            {
+                int(row["ordinal"]): str(row["evidence_json"])
+                for row in conn.execute(
+                    "SELECT ordinal, evidence_json FROM mastery_learning_evidence WHERE path_id = ?",
+                    (path_id,),
+                ).fetchall()
+            }
+            if previous_evidence is None
+            else None
+        )
         for ordinal, evidence in enumerate(progress.learning_evidence):
             payload = evidence.model_dump(mode="json")
+            if previous_evidence is not None and ordinal < len(previous_evidence):
+                if previous_evidence[ordinal] == payload:
+                    continue
             encoded = json.dumps(payload, ensure_ascii=False)
-            if existing.get(ordinal) == encoded:
+            if existing is not None and existing.get(ordinal) == encoded:
                 continue
             conn.execute(
                 """
@@ -681,11 +694,30 @@ class LearningStore:
                     encoded,
                 ),
             )
-        if len(existing) > len(progress.learning_evidence):
+        previous_length = len(previous_evidence) if previous_evidence is not None else len(existing)
+        if previous_length > len(progress.learning_evidence):
             conn.execute(
                 "DELETE FROM mastery_learning_evidence WHERE path_id = ? AND ordinal >= ?",
                 (path_id, len(progress.learning_evidence)),
             )
+
+    def rebuild_learning_evidence_projection(self, book_id: str) -> None:
+        """Explicitly reconcile a path's query index from its durable aggregate."""
+        path_id = self._validate_id(book_id)
+        self._import_legacy_if_needed(path_id)
+        with self._connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT state_json, revision FROM mastery_paths WHERE path_id = ?", (path_id,)
+                ).fetchone()
+                if row is None:
+                    raise KeyError(path_id)
+                self._sync_evidence_projection(conn, path_id, self._progress_from_row(row))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
 
     def _archive_legacy(self, path: Path) -> None:
         if not path.exists():
@@ -923,7 +955,7 @@ class LearningStore:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
-                    "SELECT revision, created_at FROM mastery_paths WHERE path_id = ?",
+                    "SELECT revision, created_at, state_json FROM mastery_paths WHERE path_id = ?",
                     (path_id,),
                 ).fetchone()
                 if row is None:
@@ -973,7 +1005,14 @@ class LearningStore:
                             path_id, expected, int(current["revision"]) if current else 0
                         )
                     event_type = "path.saved"
-                self._sync_evidence_projection(conn, path_id, progress)
+                previous_evidence = (
+                    json.loads(row["state_json"]).get("learning_evidence", [])
+                    if row is not None
+                    else []
+                )
+                self._sync_evidence_projection(
+                    conn, path_id, progress, previous_evidence=previous_evidence
+                )
                 conn.execute(
                     """
                     INSERT INTO mastery_events (
@@ -1069,7 +1108,14 @@ class LearningStore:
                             tx.base_revision,
                             int(current["revision"]) if current else 0,
                         )
-                    self._sync_evidence_projection(conn, path_id, tx.progress)
+                    previous_evidence = (
+                        json.loads(row["state_json"]).get("learning_evidence", [])
+                        if row is not None
+                        else []
+                    )
+                    self._sync_evidence_projection(
+                        conn, path_id, tx.progress, previous_evidence=previous_evidence
+                    )
                     for event_type, payload, session_id, turn_id in tx.events:
                         conn.execute(
                             """
