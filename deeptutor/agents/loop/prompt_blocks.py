@@ -44,8 +44,13 @@ class LoopPromptAssembler:
 
     def __init__(self, *, prompts: dict[str, Any], language: str) -> None:
         self.prompts = prompts
-        _lang = language.lower()
-        self.language = "zh" if _lang.startswith("zh") else "fr" if _lang.startswith("fr") else "en"
+        # Two different things used to share one attribute. ``language`` picks
+        # the prompt ASSETS, and only ``en``/``zh`` yaml exists — so anything
+        # else must fall back to English scaffolding. ``output_language`` is
+        # what the reader wants to READ, which can be any language the
+        # directive can name.
+        self.language = "zh" if language.lower().startswith("zh") else "en"
+        self.output_language = (language or "en").strip().lower() or "en"
 
     def system_prompt(
         self,
@@ -87,7 +92,7 @@ class LoopPromptAssembler:
         # different language mid-conversation, and the strict directive plus
         # the runtime policy above it otherwise make the model refuse them.
         # Books, quizzes and research keep the strict form — nobody is asking.
-        return append_language_directive(joined, self.language, allow_user_override=True)
+        return append_language_directive(joined, self.output_language, allow_user_override=True)
 
     def split_for_replay(
         self, blocks: list[PromptBlock]

@@ -4,6 +4,7 @@ import type {
   CatalogProfile,
   ServiceName,
 } from "@/features/settings/store/SettingsStore";
+import type { AppLanguage } from "@/i18n/init";
 
 // Tailwind 3 silently drops `<color>-[var(--token)]/NN`: our tokens are hex
 // literals, so it cannot split them into channels and emits no rule at all.
@@ -85,7 +86,7 @@ export function formatContextWindowSource(
 
 export function formatContextWindowUpdatedAt(
   value: string | undefined,
-  language: "en" | "zh" | "fr",
+  language: AppLanguage,
 ): string {
   if (!value) return "";
   const parsed = new Date(value);
@@ -122,7 +123,7 @@ export function activeModelDetail(
 // CJK glyphs are already square blocks so we drop both and bump size a hair.
 export function labelClass(
   size: "sm" | "md" | "lg",
-  language: "en" | "zh" | "fr",
+  language: AppLanguage,
 ): string {
   if (language === "zh") {
     if (size === "sm") return "text-[10.5px] font-medium";
