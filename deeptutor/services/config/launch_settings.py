@@ -57,6 +57,8 @@ def _normalize_language(value: Any) -> str | None:
         return "zh"
     if language in {"fr", "french"} or language.startswith("fr_"):
         return "fr"
+    if language in {"uk", "ua", "ukrainian"} or language.startswith("uk_"):
+        return "uk"
     return None
 
 

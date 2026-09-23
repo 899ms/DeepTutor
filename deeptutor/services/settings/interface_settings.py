@@ -13,10 +13,12 @@ import os
 from pathlib import Path
 import tempfile
 import threading
-from typing import Any
+from typing import Any, Literal
 
 from deeptutor.services.path_service import get_path_service
 from deeptutor.tools.builtin import USER_TOGGLEABLE_TOOL_NAMES
+
+UiLanguage = Literal["en", "zh", "fr", "uk"]
 
 DEFAULT_UI_SETTINGS: dict[str, Any] = {
     # "snow" is the pure-white neutral theme, shown as "Default" in the UI.

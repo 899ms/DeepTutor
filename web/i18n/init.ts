@@ -2,30 +2,10 @@ import i18n, { type Resource } from "i18next";
 import { initReactI18next } from "react-i18next";
 
 import enApp from "@/locales/en/app.json";
+import { normalizeLanguage, type AppLanguage } from "./languages";
 
-export type AppLanguage = "en" | "zh" | "fr" | "uk";
-
-/**
- * The languages the app offers, in menu order — the single source of truth for
- * every language picker. Pickers used to hardcode `["en", "zh"]` inline, so a
- * new locale had to be added in each of them and was silently missing from the
- * ones nobody remembered.
- */
-export const APP_LANGUAGES: readonly { code: AppLanguage; labelKey: string }[] = [
-  { code: "en", labelKey: "language.english" },
-  { code: "zh", labelKey: "language.chinese" },
-  { code: "fr", labelKey: "language.french" },
-  { code: "uk", labelKey: "language.ukrainian" },
-];
-
-export function normalizeLanguage(lang: unknown): AppLanguage {
-  if (!lang) return "en";
-  const s = String(lang).toLowerCase();
-  if (s === "zh" || s === "cn" || s === "chinese") return "zh";
-  if (s === "fr" || s === "french") return "fr";
-  if (s === "uk" || s === "ua" || s === "ukrainian") return "uk";
-  return "en";
-}
+export { APP_LANGUAGES, isAppLanguage, normalizeLanguage } from "./languages";
+export type { AppLanguage } from "./languages";
 
 let _initialized = false;
 
