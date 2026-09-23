@@ -32,7 +32,9 @@ class _StubClient:
     def supports_multimodal_images(self) -> bool:
         return self._vision
 
-    async def complete(self, prompt: str, system_prompt: str | None = None, **kwargs: object) -> str:
+    async def complete(
+        self, prompt: str, system_prompt: str | None = None, **kwargs: object
+    ) -> str:
         name = str(kwargs.get("image_filename") or "")
         self.calls.append(name)
         if name in self._fail:
@@ -158,9 +160,7 @@ def _pdf_with_image(path: Path) -> None:
 
     doc = pymupdf.open()
     page = doc.new_page()
-    prose = (
-        "Figure one shows the measured throughput across three configurations. " * 8
-    )
+    prose = "Figure one shows the measured throughput across three configurations. " * 8
     page.insert_textbox(pymupdf.Rect(72, 72, 520, 280), prose, fontsize=9)
     page.insert_image(pymupdf.Rect(72, 320, 300, 520), stream=_png_bytes(seed=11))
     page.insert_image(pymupdf.Rect(320, 320, 540, 520), stream=_png_bytes(seed=23))
@@ -190,19 +190,40 @@ def test_refresh_document_preserves_state_and_captions(tmp_path: Path) -> None:
     asset_file.parent.mkdir(parents=True, exist_ok=True)
     asset_file.write_bytes(b"poster-bytes")
 
-    # Old captions: keep one real figure's caption, drop another figure's row
-    # so it re-appears uncaptioned, and leave a ghost row that the new
-    # extraction will not reproduce.
+    # The same image gets a different old filename, while the other old
+    # filename now holds different bytes. Only the matching image may keep
+    # its caption when extraction assigns ordinal names again.
     kept_name = names[0]
     new_name = names[1]
+    legacy_name = "legacy-figure.png"
+    media_dir = content_dir / "media"
+    (media_dir / kept_name).rename(media_dir / legacy_name)
+    (media_dir / new_name).write_bytes(_png_bytes(seed=77))
     media_index = content_dir / "media.json"
     rows = [
-        {"name": kept_name, "locator": 1, "mime": "image/png", "bytes": 9,
-         "caption": f"kept caption for {kept_name}"},
+        {
+            "name": legacy_name,
+            "locator": 1,
+            "mime": "image/png",
+            "bytes": 9,
+            "caption": f"kept caption for {kept_name}",
+        },
+        {
+            "name": new_name,
+            "locator": 1,
+            "mime": "image/png",
+            "bytes": 9,
+            "caption": "stale caption for replaced bytes",
+        },
     ]
     rows.append(
-        {"name": "ghost.png", "locator": 1, "mime": "image/png", "bytes": 9,
-         "caption": "ghost caption"}
+        {
+            "name": "ghost.png",
+            "locator": 1,
+            "mime": "image/png",
+            "bytes": 9,
+            "caption": "ghost caption",
+        }
     )
     media_index.write_text(json.dumps(rows), encoding="utf-8")
 
@@ -217,6 +238,7 @@ def test_refresh_document_preserves_state_and_captions(tmp_path: Path) -> None:
     assert captions.get(kept_name) == f"kept caption for {kept_name}"
     assert new_name in captions and not captions.get(new_name)
     assert "ghost.png" not in captions
+    assert legacy_name not in captions
 
 
 def test_refresh_document_requires_raw_bytes(tmp_path: Path) -> None:

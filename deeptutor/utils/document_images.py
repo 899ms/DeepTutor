@@ -202,6 +202,7 @@ def build_marker(image: EmbeddedImage) -> str:
     """The canonical in-text marker for one image."""
     return f"[图片 {image_index_from_name(image.name)}: {image.name}]"
 
+
 _MARKER_PATTERN = re.compile(r"\[图片 (\d+): ([^\]\s]+)\]")
 
 
@@ -505,19 +506,17 @@ def _rels_for(member: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def extract_pdf_images(
-    data: bytes, *, budget: ImageBudget | None = None
-) -> PdfImages:
+def extract_pdf_images(data: bytes, *, budget: ImageBudget | None = None) -> PdfImages:
     """Raster images per page via PyMuPDF, deduplicated across the document.
 
-    Running headers/footers embed the same logo xref on every page; only the
-    first occurrence is kept so a 300-page PDF does not become 300 copies of
-    the same banner.
+    Running headers/footers embed the same logo xref on every page. Store its
+    bytes once, but map that image to every page where it appears.
 
     ``budget`` defaults to the chat-attachment caps (unchanged behaviour). When
     it carries a non-zero ``max_images_per_page``, a page stops admitting once
     it hits that many images and the rest of that page's candidates are counted
-    as page-budget skips — dedup hits are still free and never counted.
+    as page-budget skips. Reused xrefs still count toward the per-page cap,
+    but do not consume the document-wide image or byte budgets again.
     """
     try:
         import pymupdf
@@ -527,26 +526,41 @@ def extract_pdf_images(
     budget = budget or ImageBudget()
     images: list[EmbeddedImage] = []
     page_map: list[tuple[int, tuple[int, ...]]] = []
-    seen_xrefs: set[int] = set()
+    xref_to_index: dict[int, int] = {}
+    rejected_xrefs: set[int] = set()
 
     try:
         with pymupdf.open(stream=data, filetype="pdf") as doc:
             for page_number, page in enumerate(doc, 1):
                 indices: list[int] = []
                 admitted_on_page = 0
+                seen_on_page: set[int] = set()
                 for info in page.get_images(full=True):
                     xref = info[0]
-                    if xref in seen_xrefs:
+                    if xref in seen_on_page:
                         continue
-                    seen_xrefs.add(xref)
+                    seen_on_page.add(xref)
+                    if budget.max_images_per_page and (
+                        admitted_on_page >= budget.max_images_per_page
+                    ):
+                        budget.skipped_page_budget += 1
+                        continue
+                    if xref in xref_to_index:
+                        indices.append(xref_to_index[xref])
+                        admitted_on_page += 1
+                        continue
+                    if xref in rejected_xrefs:
+                        continue
+                    rejected_xrefs.add(xref)
                     try:
                         extracted = doc.extract_image(xref)
                     except Exception:
                         continue
                     raw = extracted.get("image") or b""
-                    if int(extracted.get("width") or 0) < 64 or int(
-                        extracted.get("height") or 0
-                    ) < 64:
+                    if (
+                        int(extracted.get("width") or 0) < 64
+                        or int(extracted.get("height") or 0) < 64
+                    ):
                         continue
                     ext = _normalise_ext("." + (extracted.get("ext") or ""))
                     if ext in {".emf", ".wmf"}:
@@ -555,15 +569,11 @@ def extract_pdf_images(
                     if ext not in SUPPORTED_IMAGE_EXTENSIONS:
                         budget.register_other_skip()
                         continue
-                    if budget.max_images_per_page and (
-                        admitted_on_page >= budget.max_images_per_page
-                    ):
-                        budget.skipped_page_budget += 1
-                        continue
                     admitted = budget.try_admit(ext, raw)
                     if admitted is not None:
                         images.append(admitted)
-                        indices.append(len(images) - 1)
+                        xref_to_index[xref] = len(images) - 1
+                        indices.append(xref_to_index[xref])
                         admitted_on_page += 1
                 if indices:
                     page_map.append((page_number, tuple(indices)))

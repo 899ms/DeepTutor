@@ -289,7 +289,9 @@ class ReadingStore:
                             "bytes": len(item.data),
                         }
                     )
-                _atomic_write(stage_dir / MEDIA_INDEX_NAME, json.dumps(media_rows, ensure_ascii=False))
+                _atomic_write(
+                    stage_dir / MEDIA_INDEX_NAME, json.dumps(media_rows, ensure_ascii=False)
+                )
 
             if extraction.render_mode != "text":
                 raw_dir = stage_dir / RAW_DIR
@@ -428,14 +430,35 @@ class ReadingStore:
                     f"{existing.unit_count}; refusing to shift locators."
                 )
 
-            # Captions cost a vision-model call each, so a re-extraction that
-            # does not re-caption (CLI ``--no-caption``) must carry the old
-            # ones forward by image name: same figure in, same caption out.
-            previous_captions = {
-                str(row.get("name")): str(row.get("caption"))
-                for row in (self.media_items(resolved_id) or [])
-                if row.get("name") and str(row.get("caption") or "").strip()
-            }
+            # Extraction order can rename image-01.png to a different figure.
+            # Carry captions forward only when the image bytes still match.
+            previous_captions: dict[str, str] = {}
+            conflicting_hashes: set[str] = set()
+            digest_by_name: dict[str, str | None] = {}
+            for row in self.media_items(resolved_id):
+                caption = str(row.get("caption") or "").strip()
+                if not caption:
+                    continue
+                name = str(row.get("name") or "")
+                if name not in digest_by_name:
+                    path = self.media_path(resolved_id, name)
+                    try:
+                        digest_by_name[name] = (
+                            hashlib.sha256(path.read_bytes()).hexdigest()
+                            if path is not None
+                            else None
+                        )
+                    except OSError:
+                        digest_by_name[name] = None
+                digest = digest_by_name[name]
+                if digest is None:
+                    continue
+                if digest in previous_captions and previous_captions[digest] != caption:
+                    conflicting_hashes.add(digest)
+                else:
+                    previous_captions[digest] = caption
+            for digest in conflicting_hashes:
+                previous_captions.pop(digest, None)
 
             stage_dir = self.root / f".{resolved_id}.{uuid.uuid4().hex[:8]}.staging"
             backup_dir = self.root / f".{resolved_id}.{uuid.uuid4().hex[:8]}.backup"
@@ -455,7 +478,7 @@ class ReadingStore:
                         "mime": item.mime_type,
                         "bytes": len(item.data),
                     }
-                    caption = previous_captions.get(item.name)
+                    caption = previous_captions.get(hashlib.sha256(item.data).hexdigest())
                     if caption:
                         row["caption"] = caption
                     media_rows.append(row)
@@ -515,9 +538,7 @@ class ReadingStore:
             for state_dir in (ANNOTATIONS_DIR, POSITIONS_DIR, BOOKMARKS_DIR, REVISIONS_DIR):
                 source_state_dir = material_dir / state_dir
                 if source_state_dir.is_dir():
-                    shutil.copytree(
-                        source_state_dir, stage_dir / state_dir, dirs_exist_ok=True
-                    )
+                    shutil.copytree(source_state_dir, stage_dir / state_dir, dirs_exist_ok=True)
             for state_name in (ANNOTATIONS_NAME, POSITION_NAME):
                 source_state = material_dir / state_name
                 if source_state.is_file():
@@ -903,9 +924,7 @@ class ReadingStore:
         path = self._dir(material_id) / MEDIA_DIR / clean
         return path if path.is_file() else None
 
-    def update_media_captions(
-        self, material_id: str, captions: Mapping[str, str]
-    ) -> int:
+    def update_media_captions(self, material_id: str, captions: Mapping[str, str]) -> int:
         """Write per-image captions into the media index. Returns rows changed.
 
         *captions* maps an image name to its text. Names absent from the index

@@ -66,7 +66,15 @@ class GrokBackend(SubagentBackend):
             help_ok, help_text = await probe_version([self.cli_command, "--help"])
             ok = help_ok and all(
                 flag in help_text
-                for flag in ("streaming-json", "--single", "--resume", "--permission-mode")
+                for flag in (
+                    "--output-format",
+                    "streaming-json",
+                    "--single",
+                    "--resume",
+                    "--permission-mode",
+                    "--no-memory",
+                    "--verbatim",
+                )
             )
             if not ok:
                 detail = "Incompatible grok command. " + _NOT_FOUND_DETAIL

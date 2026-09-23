@@ -185,7 +185,7 @@ def test_pdf_images_deduplicates_repeated_xref(tmp_path) -> None:
 
     result = extract_pdf_images(pdf_path.read_bytes())
     assert len(result.collection.images) == 1
-    assert [page for page, _ in result.page_map] == [1]
+    assert result.page_map == ((1, (0,)), (2, (0,)), (3, (0,)))
 
 
 def _png_for_index(index: int) -> bytes:
