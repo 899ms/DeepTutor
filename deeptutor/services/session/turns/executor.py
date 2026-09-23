@@ -230,6 +230,13 @@ class TurnExecutor:
             )
         )
         try:
+            # A queued turn may start after a learner's material grant changes.
+            # Recheck before prompt construction and reading-tool execution.
+            material_id = _reading_material_id(payload.get("reading_material_id"))
+            if material_id:
+                from deeptutor.multi_user.learning_access import assert_learning_material
+
+                assert_learning_material(material_id)
             from deeptutor.agents.notebook import NotebookAnalysisAgent
             from deeptutor.book.context import build_book_context
             from deeptutor.core.context import Attachment, TurnRuntimeContext, UnifiedContext

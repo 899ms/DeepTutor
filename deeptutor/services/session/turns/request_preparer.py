@@ -309,6 +309,7 @@ class TurnRequestPreparer:
         reading_material_revision = _reading_material_revision(
             payload.get("reading_material_revision")
         )
+        reading_catalog = None
         if workspace_mode == WORKSPACE_MODE_READING and reading_workspace_id:
             from deeptutor.reading import ReadingCatalogStore
 
@@ -323,6 +324,18 @@ class TurnRequestPreparer:
                 tab.material.material_id for tab in reading_workspace.tabs
             }:
                 raise RuntimeError("The active material is not part of this reading workspace.")
+        # The workspace and saved session can still contain a material whose
+        # learner assignment has since been revoked. Authorize the resolved
+        # material, including a default chosen from the workspace, before
+        # attaching the session or admitting a replayed turn.
+        if reading_material_id:
+            from deeptutor.multi_user.learning_access import assert_learning_material
+
+            try:
+                assert_learning_material(reading_material_id)
+            except PermissionError as exc:
+                raise RuntimeError(str(exc)) from exc
+        if reading_catalog is not None:
             reading_catalog.attach_session(
                 reading_workspace_id,
                 session["id"],
