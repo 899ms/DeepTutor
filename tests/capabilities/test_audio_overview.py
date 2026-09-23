@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from pathlib import Path
+import shutil
+import subprocess
 from types import SimpleNamespace
 from typing import Any
+import wave
 
 import pytest
 
@@ -12,6 +16,7 @@ from deeptutor.capabilities.audio_overview.capability import AudioOverviewCapabi
 from deeptutor.capabilities.audio_overview.pipeline import (
     AudioOverviewError,
     AudioOverviewPipeline,
+    _render_audio,
     normalize_rag_result,
     parse_script,
 )
@@ -151,7 +156,13 @@ async def test_pipeline_generates_two_voices_and_publishes_workspace_items(
 
     async def fake_speech(text: str, **kwargs: Any) -> tuple[bytes, str]:
         speech_calls.append({"text": text, **kwargs})
-        return (f"audio:{text}".encode(), "audio/mpeg")
+        buffer = io.BytesIO()
+        with wave.open(buffer, "wb") as output:
+            output.setnchannels(1)
+            output.setsampwidth(2)
+            output.setframerate(24000)
+            output.writeframes(b"\x00\x00" * 2400)
+        return buffer.getvalue(), "audio/wav"
 
     published: list[list[dict[str, Any]]] = []
 
@@ -218,10 +229,12 @@ async def test_pipeline_generates_two_voices_and_publishes_workspace_items(
 
     assert rag_calls == [("reliability audio overview", "engineering", 6)]
     assert [call["voice"] for call in speech_calls] == ["alloy", "nova"]
-    assert artifacts.audio_path.read_bytes() == b"audio:Let's begin.audio:Backoff controls retries."
+    with wave.open(str(artifacts.audio_path), "rb") as audio:
+        assert audio.getnframes() == 4800
+        assert audio.getframerate() == 24000
     assert "[S1] Reliability.pdf" in artifacts.transcript_path.read_text(encoding="utf-8")
     assert [row["path"] for row in published[0]] == [
-        "outputs/audio_overview/session/turn/turn-42-audio-overview.mp3",
+        "outputs/audio_overview/session/turn/turn-42-audio-overview.wav",
         "outputs/audio_overview/session/turn/turn-42-audio-overview.md",
     ]
     assert [item["workspace_item_id"] for item in artifacts.workspace_items] == [
@@ -309,3 +322,40 @@ async def test_capability_publishes_two_workspace_attachments() -> None:
         "transcript",
     ]
     assert all(item["type"] == "workspace_item" for item in workspace_items)
+
+
+def test_mp3_segments_are_remuxed_into_one_playable_file(tmp_path: Path) -> None:
+    if shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg is needed to verify MP3 remuxing")
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(24000)
+        output.writeframes(b"\x00\x00" * 2400)
+    mp3 = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "wav",
+            "-i",
+            "pipe:0",
+            "-f",
+            "mp3",
+            "pipe:1",
+        ],
+        input=buffer.getvalue(),
+        capture_output=True,
+        check=True,
+    ).stdout
+    path = _render_audio([(mp3, "audio/mpeg"), (mp3, "audio/mpeg")], tmp_path, "overview")
+    assert path.suffix == ".mp3"
+    decoded = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(path), "-f", "null", "-"],
+        capture_output=True,
+        check=False,
+    )
+    assert decoded.returncode == 0

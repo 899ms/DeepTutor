@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
+import io
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 from typing import Any
+import wave
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -92,6 +97,103 @@ _SOURCE_FIELDS = ("sources", "citations", "search_results", "documents")
 _TITLE_FIELDS = ("title", "source", "filename", "file_name", "document", "document_name", "path")
 _LOCATOR_FIELDS = ("locator", "page", "page_number", "section", "url", "source_url")
 _SNIPPET_FIELDS = ("snippet", "content", "text", "preview", "excerpt")
+
+
+def _wave_parameters(audio: bytes) -> tuple[int, int, int] | None:
+    try:
+        with wave.open(io.BytesIO(audio), "rb") as source:
+            return source.getnchannels(), source.getsampwidth(), source.getframerate()
+    except (EOFError, wave.Error):
+        return None
+
+
+def _render_audio(parts: list[tuple[bytes, str]], output_dir: Path, stem: str) -> Path:
+    """Join decoded audio frames, never whole encoded files or mismatched MIME types."""
+    if not parts or any(not audio for audio, _ in parts):
+        raise AudioOverviewError("The speech provider returned empty audio.")
+    wave_params = [_wave_parameters(audio) for audio, _ in parts]
+    if all(params is not None and params == wave_params[0] for params in wave_params):
+        output = output_dir / f"{stem}.wav"
+        channels, sample_width, sample_rate = wave_params[0]
+        with wave.open(str(output), "wb") as target:
+            target.setnchannels(channels)
+            target.setsampwidth(sample_width)
+            target.setframerate(sample_rate)
+            for audio, _ in parts:
+                with wave.open(io.BytesIO(audio), "rb") as source:
+                    target.writeframes(source.readframes(source.getnframes()))
+        return output
+
+    output = output_dir / f"{stem}.mp3"
+    with tempfile.TemporaryDirectory(prefix="audio-overview-") as directory:
+        raw_path = Path(directory) / "joined.pcm"
+        try:
+            with raw_path.open("wb") as raw:
+                for audio, content_type in parts:
+                    input_args: list[str] = []
+                    from deeptutor.services.voice.audio import _parse_pcm_content_type
+
+                    pcm = _parse_pcm_content_type(content_type)
+                    if pcm is not None:
+                        sample_rate, channels = pcm
+                        input_args = ["-f", "s16le", "-ar", str(sample_rate), "-ac", str(channels)]
+                    decoded = subprocess.run(
+                        [
+                            "ffmpeg",
+                            "-hide_banner",
+                            "-loglevel",
+                            "error",
+                            "-nostdin",
+                            *input_args,
+                            "-i",
+                            "pipe:0",
+                            "-f",
+                            "s16le",
+                            "-ar",
+                            "24000",
+                            "-ac",
+                            "1",
+                            "pipe:1",
+                        ],
+                        input=audio,
+                        capture_output=True,
+                        check=False,
+                    )
+                    if decoded.returncode != 0 or not decoded.stdout:
+                        raise AudioOverviewError(
+                            "The speech provider returned audio that could not be decoded."
+                        )
+                    raw.write(decoded.stdout)
+            encoded = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostdin",
+                    "-f",
+                    "s16le",
+                    "-ar",
+                    "24000",
+                    "-ac",
+                    "1",
+                    "-i",
+                    str(raw_path),
+                    "-codec:a",
+                    "libmp3lame",
+                    "-q:a",
+                    "4",
+                    "-y",
+                    str(output),
+                ],
+                capture_output=True,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise AudioOverviewError("ffmpeg is required to join this speech format.") from exc
+        if encoded.returncode != 0 or not output.is_file() or output.stat().st_size == 0:
+            raise AudioOverviewError("Could not encode the audio overview.")
+    return output
 
 
 def parse_script(raw_response: str, citation_ids: set[str]) -> AudioOverviewScript:
@@ -311,28 +413,45 @@ class AudioOverviewPipeline:
 
             speech = synthesize_speech_impl
 
-        audio_parts: list[bytes] = []
-        for segment in script.segments:
-            voice = (
-                request_config.host_voice
-                if segment.speaker == "host"
-                else request_config.expert_voice
+        host_voice = request_config.host_voice
+        expert_voice = request_config.expert_voice
+        if self._speech_func is None and (host_voice is None or expert_voice is None):
+            from deeptutor.services.config.provider_runtime import resolve_tts_runtime_config
+            from deeptutor.services.voice.options import voice_model_options
+
+            tts = resolve_tts_runtime_config()
+            choices = voice_model_options(tts.provider_name, "tts", tts.model).get("voices", [])
+            host_voice = host_voice or tts.voice
+            expert_voice = expert_voice or next(
+                (str(item["id"]) for item in choices if item.get("id") != host_voice), None
             )
-            audio, _content_type = await speech(
+            if not host_voice or not expert_voice:
+                raise AudioOverviewError(
+                    "Configure distinct host and expert voices for the active TTS model."
+                )
+        else:
+            host_voice = host_voice or "host"
+            expert_voice = expert_voice or "expert"
+
+        audio_parts: list[tuple[bytes, str]] = []
+        for segment in script.segments:
+            voice = host_voice if segment.speaker == "host" else expert_voice
+            audio, content_type = await speech(
                 segment.text,
                 voice=voice,
                 response_format="mp3",
             )
-            audio_parts.append(audio)
+            audio_parts.append((audio, content_type))
 
         stem = _safe_stem(f"{turn_id}-audio-overview", "audio-overview")
-        audio_path = self.workspace_output_dir / f"{stem}.mp3"
         transcript_path = self.workspace_output_dir / f"{stem}.md"
         transcript = _transcript(script, context.citations, self.language)
 
         try:
             self.workspace_output_dir.mkdir(parents=True, exist_ok=True)
-            audio_path.write_bytes(b"".join(audio_parts))
+            audio_path = await asyncio.to_thread(
+                _render_audio, audio_parts, self.workspace_output_dir, stem
+            )
             transcript_path.write_text(transcript, encoding="utf-8")
         except OSError as exc:
             raise AudioOverviewError(f"Could not write audio overview artifacts: {exc}") from exc

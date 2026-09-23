@@ -29,8 +29,8 @@ class AudioOverviewCapability(TurnCapability):
         config_defaults={
             "topic": "",
             "target_minutes": 5,
-            "host_voice": "alloy",
-            "expert_voice": "nova",
+            "host_voice": None,
+            "expert_voice": None,
             "max_context_chunks": 6,
         },
     )
