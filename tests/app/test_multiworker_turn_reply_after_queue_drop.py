@@ -9,6 +9,7 @@ import pytest
 from deeptutor.app.service import TurnApplicationService
 from deeptutor.core.stream import StreamEvent, StreamEventType
 from deeptutor.runtime.coordination import MemoryCoordinator
+from deeptutor.services.path_service import PathService
 from deeptutor.services.session.sqlite_store import SQLiteSessionStore
 from deeptutor.services.session.turn_runtime import TurnRuntimeManager
 
@@ -50,6 +51,13 @@ def _payload() -> dict:
 @pytest.fixture(autouse=True)
 def _workspace_root(tmp_path, monkeypatch: pytest.MonkeyPatch):
     """Keep the runtime workspace binding local to the test process."""
+    paths = PathService(workspace_root=tmp_path / "data")
+    paths.ensure_all_directories()
+    monkeypatch.setattr("deeptutor.multi_user.paths.get_account_path_service", lambda: paths)
+    monkeypatch.setattr("deeptutor.services.workspace.service.get_path_service", lambda: paths)
+    monkeypatch.setattr(
+        "deeptutor.services.workspace.data_migration.get_account_path_service", lambda: paths
+    )
     root = tmp_path / "workspace"
     root.mkdir()
     monkeypatch.setenv("DEEPTUTOR_WORKSPACE_ROOT", str(root))
@@ -125,9 +133,17 @@ async def test_reply_accepted_after_local_queue_dropped_is_never_delivered(
     assert persisted is not None
     assert persisted["status"] == "cancelled"
 
-    events = await store_b.get_turn_events(turn["id"])
+    # The status transition precedes publishing and persisting DONE. Wait for
+    # the event itself before asserting the complete terminal stream.
+    for _ in range(100):
+        events = await store_b.get_turn_events(turn["id"])
+        if events and events[-1]["type"] == "done":
+            break
+        await asyncio.sleep(0.02)
     event_types = [event["type"] for event in events]
     assert "error" in event_types
+    assert event_types.count("done") == 1
+    assert event_types.index("error") < event_types.index("done")
     assert event_types[-1] == "done"
 
     _fresh_session, following = await app_b.start_turn(_payload())
