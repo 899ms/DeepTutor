@@ -48,14 +48,16 @@ async def test_feishu_channel_selects_domain_for_rest_and_websocket_clients(
             return _Chain(event_calls, object())
 
     class WSClient:
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            ws_clients.append({"args": args, "kwargs": kwargs})
+        def __init__(
+            self, *args: Any, extra_ua_tags: list[str] | None = None, **kwargs: Any
+        ) -> None:
+            ws_clients.append({"args": args, "kwargs": {**kwargs, "extra_ua_tags": extra_ua_tags}})
 
     lark = SimpleNamespace(
         Client=Client,
         EventDispatcherHandler=EventDispatcherHandler,
         LogLevel=SimpleNamespace(INFO="INFO"),
-        ws=SimpleNamespace(Client=WSClient),
+        ws=SimpleNamespace(Client=WSClient, client=SimpleNamespace()),
     )
     const = SimpleNamespace(FEISHU_DOMAIN="FEISHU_DOMAIN", LARK_DOMAIN="LARK_DOMAIN")
 

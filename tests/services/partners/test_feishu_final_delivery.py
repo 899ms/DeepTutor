@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -93,6 +94,21 @@ async def test_long_turn_still_removes_its_working_reaction() -> None:
     channel._remove_reaction_sync = MagicMock(return_value=True)
 
     await channel._finish_reaction("om_user")
+
+    channel._remove_reaction_sync.assert_called_once_with("om_user", "reaction-1")
+    assert "om_user" not in channel._working_reactions
+
+
+@pytest.mark.asyncio
+async def test_abandoned_turn_reaction_expires_without_another_message() -> None:
+    channel = _channel()
+    channel._WORKING_REACTION_TTL = 0.01
+    channel._add_reaction_sync = MagicMock(return_value="reaction-1")
+    channel._remove_reaction_sync = MagicMock(return_value=True)
+
+    await channel._add_reaction("om_user")
+    expiry = channel._reaction_expiry_tasks["om_user"]
+    await asyncio.wait_for(expiry, timeout=1)
 
     channel._remove_reaction_sync.assert_called_once_with("om_user", "reaction-1")
     assert "om_user" not in channel._working_reactions

@@ -1,9 +1,12 @@
 """Feishu/Lark channel implementation using lark-oapi SDK with WebSocket long connection."""
 
 import asyncio
+import base64
 from collections import OrderedDict
 from dataclasses import dataclass
+from http import HTTPStatus
 import importlib.util
+import inspect
 import json
 import os
 import re
@@ -24,6 +27,54 @@ from deeptutor.partners.config.schema import DeliveryOverrides, StreamingSupport
 from deeptutor.partners.helpers import split_markdown_table_row
 
 FEISHU_AVAILABLE = importlib.util.find_spec("lark_oapi") is not None
+
+
+def _card_aware_ws_client(base_client: type[Any], ws_module: Any) -> type[Any]:
+    """Dispatch card callbacks skipped by supported lark-oapi WebSocket clients.
+
+    The SDK's event dispatcher already understands card actions; older WS
+    clients return before calling it. Keep the original CARD frame type when
+    writing the callback response so Feishu can replace the clicked card.
+    """
+
+    class CardAwareClient(base_client):
+        async def _handle_data_frame(self, frame: Any) -> None:
+            message_type = ws_module._get_by_key(frame.headers, ws_module.HEADER_TYPE)
+            if message_type != ws_module.MessageType.CARD.value:
+                await super()._handle_data_frame(frame)
+                return
+
+            headers = frame.headers
+            message_id = ws_module._get_by_key(headers, ws_module.HEADER_MESSAGE_ID)
+            part_count = int(ws_module._get_by_key(headers, ws_module.HEADER_SUM))
+            part_number = int(ws_module._get_by_key(headers, ws_module.HEADER_SEQ))
+            payload = frame.payload
+            if part_count > 1:
+                payload = self._combine(message_id, part_count, part_number, payload)
+                if payload is None:
+                    return
+
+            response = ws_module.Response(code=HTTPStatus.OK)
+            try:
+                started = time.monotonic()
+                result = self._event_handler.do_without_validation(payload)
+                elapsed_ms = round((time.monotonic() - started) * 1000)
+                header = headers.add()
+                header.key = ws_module.HEADER_BIZ_RT
+                header.value = str(elapsed_ms)
+                if result is not None:
+                    response.data = base64.b64encode(
+                        ws_module.JSON.marshal(result).encode(ws_module.UTF_8)
+                    )
+            except Exception:
+                logger.exception("Feishu card callback failed (message_id={})", message_id)
+                response = ws_module.Response(code=HTTPStatus.INTERNAL_SERVER_ERROR)
+
+            frame.payload = ws_module.JSON.marshal(response).encode(ws_module.UTF_8)
+            await self._write_message(frame.SerializeToString())
+
+    return CardAwareClient
+
 
 # Message type display mapping
 MSG_TYPE_MAP = {
@@ -319,6 +370,7 @@ class FeishuChannel(BaseChannel):
         self._confirmed_streams: OrderedDict[str, None] = OrderedDict()
         self._working_reactions: OrderedDict[str, tuple[str, float]] = OrderedDict()
         self._reaction_cleanup_tasks: dict[tuple[str, str], asyncio.Task[None]] = {}
+        self._reaction_expiry_tasks: dict[str, asyncio.Task[None]] = {}
         self._model_pickers: OrderedDict[str, _ModelPicker] = OrderedDict()
         self._model_picker_lock = Lock()
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -373,6 +425,8 @@ class FeishuChannel(BaseChannel):
         import lark_oapi as lark
         from lark_oapi.core.const import FEISHU_DOMAIN, LARK_DOMAIN
 
+        ws_module = lark.ws.client
+
         self._running = True
         self._loop = asyncio.get_running_loop()
         sdk_domain = LARK_DOMAIN if self.config.domain == "lark" else FEISHU_DOMAIN
@@ -406,16 +460,22 @@ class FeishuChannel(BaseChannel):
         )
         event_handler = builder.build()
 
-        # Create WebSocket client for long connection
-        self._ws_client = lark.ws.Client(
+        # The supported SDK's WS client drops CARD frames before its callback
+        # dispatcher runs. Route those frames while preserving the SDK's normal
+        # EVENT path and response envelope.
+        ws_client_cls = _card_aware_ws_client(lark.ws.Client, ws_module)
+        ws_kwargs: dict[str, Any] = {
+            "event_handler": event_handler,
+            "log_level": lark.LogLevel.INFO,
+            "domain": sdk_domain,
+        }
+        # extra_ua_tags was added after the minimum supported SDK version.
+        if "extra_ua_tags" in inspect.signature(lark.ws.Client.__init__).parameters:
+            ws_kwargs["extra_ua_tags"] = ["channel"]
+        self._ws_client = ws_client_cls(
             self.config.app_id,
             self.config.app_secret,
-            event_handler=event_handler,
-            log_level=lark.LogLevel.INFO,
-            domain=sdk_domain,
-            # Without this tag Feishu uses the personal-client protocol and may
-            # omit group @mention events over WebSocket.
-            extra_ua_tags=["channel"],
+            **ws_kwargs,
         )
 
         # Start WebSocket client in a separate thread with reconnect loop.
@@ -469,12 +529,16 @@ class FeishuChannel(BaseChannel):
         """
         self._running = False
         self._confirmed_streams.clear()
-        cleanup_tasks = list(self._reaction_cleanup_tasks.values())
+        cleanup_tasks = [
+            *self._reaction_cleanup_tasks.values(),
+            *self._reaction_expiry_tasks.values(),
+        ]
         for task in cleanup_tasks:
             task.cancel()
         if cleanup_tasks:
             await asyncio.gather(*cleanup_tasks, return_exceptions=True)
         self._reaction_cleanup_tasks.clear()
+        self._reaction_expiry_tasks.clear()
         self._working_reactions.clear()
         with self._model_picker_lock:
             self._model_pickers.clear()
@@ -548,7 +612,11 @@ class FeishuChannel(BaseChannel):
                 and now - created_at < self._WORKING_REACTION_TTL
             ):
                 break
-            expired.append(self._working_reactions.popitem(last=False))
+            message_id, receipt = self._working_reactions.popitem(last=False)
+            expiry_task = self._reaction_expiry_tasks.pop(message_id, None)
+            if expiry_task:
+                expiry_task.cancel()
+            expired.append((message_id, receipt))
         return expired
 
     def _remove_reaction_sync(self, message_id: str, reaction_id: str) -> bool:
@@ -577,6 +645,26 @@ class FeishuChannel(BaseChannel):
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self._remove_reaction_sync, message_id, reaction_id)
 
+    def _clear_reaction_receipt(self, message_id: str, receipt: tuple[str, float]) -> None:
+        if self._working_reactions.get(message_id) != receipt:
+            return
+        self._working_reactions.pop(message_id, None)
+        expiry_task = self._reaction_expiry_tasks.pop(message_id, None)
+        if expiry_task and expiry_task is not asyncio.current_task():
+            expiry_task.cancel()
+
+    def _schedule_reaction_expiry(self, message_id: str, receipt: tuple[str, float]) -> None:
+        async def expire() -> None:
+            try:
+                await asyncio.sleep(self._WORKING_REACTION_TTL)
+                if self._working_reactions.get(message_id) == receipt:
+                    await self._finish_reaction(message_id)
+            finally:
+                if self._reaction_expiry_tasks.get(message_id) is asyncio.current_task():
+                    self._reaction_expiry_tasks.pop(message_id, None)
+
+        self._reaction_expiry_tasks[message_id] = asyncio.create_task(expire())
+
     def _schedule_reaction_cleanup(self, message_id: str, receipt: tuple[str, float]) -> None:
         key = (message_id, receipt[0])
         if key in self._reaction_cleanup_tasks:
@@ -590,8 +678,7 @@ class FeishuChannel(BaseChannel):
                     if not self._client:
                         return
                     if await self._delete_reaction(*key):
-                        if self._working_reactions.get(message_id) == receipt:
-                            self._working_reactions.pop(message_id, None)
+                        self._clear_reaction_receipt(message_id, receipt)
                         return
             finally:
                 self._reaction_cleanup_tasks.pop(key, None)
@@ -607,8 +694,7 @@ class FeishuChannel(BaseChannel):
             if delay:
                 await asyncio.sleep(delay)
             if await self._delete_reaction(message_id, reaction_id):
-                if self._working_reactions.get(message_id) == receipt:
-                    self._working_reactions.pop(message_id, None)
+                self._clear_reaction_receipt(message_id, receipt)
                 return
         self._schedule_reaction_cleanup(message_id, receipt)
 
@@ -626,7 +712,15 @@ class FeishuChannel(BaseChannel):
             None, self._add_reaction_sync, message_id, emoji_type
         )
         if reaction_id:
-            self._working_reactions[message_id] = (reaction_id, time.monotonic())
+            previous = self._working_reactions.get(message_id)
+            if previous:
+                previous_expiry = self._reaction_expiry_tasks.pop(message_id, None)
+                if previous_expiry:
+                    previous_expiry.cancel()
+                self._schedule_reaction_cleanup(message_id, previous)
+            receipt = (reaction_id, time.monotonic())
+            self._working_reactions[message_id] = receipt
+            self._schedule_reaction_expiry(message_id, receipt)
             for old_message_id, old_receipt in self._prune_working_reactions():
                 self._schedule_reaction_cleanup(old_message_id, old_receipt)
 
