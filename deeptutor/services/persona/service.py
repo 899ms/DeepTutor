@@ -379,9 +379,7 @@ def load_visible_for_context(
     if admin is None:
         from deeptutor.multi_user.paths import get_admin_path_service
 
-        admin = PersonaService(
-            root=get_admin_path_service().get_workspace_dir() / "personas"
-        )
+        admin = PersonaService(root=get_admin_path_service().get_workspace_dir() / "personas")
     return admin.load_for_context(name)
 
 
