@@ -1286,7 +1286,10 @@ class LearningService:
         elif events:
             progress.repetition_states[kp_id] = scheduler.replay(
                 kp_type,
-                sorted(events, key=lambda item: item.timestamp),
+                # Live transitions follow durable append order. A linked
+                # assessment can arrive after a newer one with an older source
+                # timestamp; sorting it here would make repair diverge (#1541).
+                events,
                 desired_retention=progress.desired_retention,
             )
         else:

@@ -331,7 +331,7 @@ class TestBuildReviewQueue:
             LearningEvidence(
                 evidence_id="reading-attempt-42",
                 knowledge_point_id="kp1",
-                timestamp=now,
+                timestamp=now - 2 * 86400,
                 source="immersive_reading",
                 result="correct",
             ),
@@ -465,6 +465,49 @@ class TestRetentionBaseline:
         assert state.review_count == review_count
         assert progress.desired_retention == state.desired_retention == 0.7
         assert progress.review_queue[0].due_at == state.next_review_at
+
+    def test_replay_matches_live_after_retention_change(self, scheduler):
+        start = 1_700_000_000.0
+        events = [
+            _evidence(quality=1.0, ts=start),
+            _evidence(quality=1.0, ts=start + 7 * 86400),
+        ]
+        progress = LearningProgress(book_id="changed-target")
+        progress.knowledge_types["kp1"] = KnowledgeType.CONCEPT
+        live = scheduler.get_initial_state(KnowledgeType.CONCEPT, now=start)
+        for event in events:
+            scheduler.schedule_review(live, KnowledgeType.CONCEPT, event)
+        progress.repetition_states["kp1"] = live
+        stability_before = live.stability
+
+        scheduler.set_desired_retention(progress, 0.97, now=events[-1].timestamp)
+        replayed = scheduler.replay(KnowledgeType.CONCEPT, events, desired_retention=0.97)
+
+        assert live.stability == stability_before
+        assert replayed.model_dump() == live.model_dump()
+
+    def test_late_evidence_after_target_change_replays_in_append_order(self, scheduler):
+        start = 1_700_000_000.0
+        events = [
+            _evidence(quality=1.0, ts=start),
+            _evidence(quality=0.0, result="incorrect", ts=start + 7 * 86400),
+        ]
+        progress = LearningProgress(book_id="late-evidence")
+        progress.knowledge_types["kp1"] = KnowledgeType.CONCEPT
+        live = scheduler.get_initial_state(KnowledgeType.CONCEPT, now=start)
+        for event in events:
+            scheduler.schedule_review(live, KnowledgeType.CONCEPT, event)
+        progress.repetition_states["kp1"] = live
+        scheduler.set_desired_retention(progress, 0.97, now=events[-1].timestamp)
+        due_after_failure = live.next_review_at
+
+        late = _evidence(quality=1.0, ts=start + 86400)
+        events.append(late)
+        scheduler.schedule_review(live, KnowledgeType.CONCEPT, late)
+        assert live.last_review_at == start + 7 * 86400
+        assert live.next_review_at == due_after_failure
+        replayed = scheduler.replay(KnowledgeType.CONCEPT, events, desired_retention=0.97)
+        assert replayed.model_dump() == live.model_dump()
 
     @pytest.mark.parametrize("invalid", [0.5, 1.0, float("nan"), float("inf")])
     def test_invalid_retention_is_rejected(self, scheduler, invalid):

@@ -310,6 +310,70 @@ class TestSaveLoad:
         assert [item.model_dump() for item in restarted.learning_evidence] == [event.model_dump()]
         assert store.count_learning_evidence("legacy-review") == 1
 
+    def test_changed_retention_and_late_evidence_replay_after_restart(self, store, tmp_path):
+        from deeptutor.learning.models import LearningEvidence
+        from deeptutor.learning.scheduler import SpacedRepetitionScheduler
+
+        start = 1_700_000_000.0
+        scheduler = SpacedRepetitionScheduler()
+        progress = LearningProgress(book_id="late-srs")
+        progress.knowledge_types["kp1"] = KnowledgeType.CONCEPT
+        state = scheduler.get_initial_state(KnowledgeType.CONCEPT, now=start)
+        first = LearningEvidence(
+            evidence_id="guided-first",
+            knowledge_point_id="kp1",
+            timestamp=start,
+            result="correct",
+            quality=1.0,
+        )
+        second = LearningEvidence(
+            evidence_id="guided-second",
+            knowledge_point_id="kp1",
+            timestamp=start + 7 * 86400,
+            result="incorrect",
+            quality=0.0,
+        )
+        for event in (first, second):
+            progress.learning_evidence.append(event)
+            scheduler.schedule_review(state, KnowledgeType.CONCEPT, event)
+        progress.repetition_states["kp1"] = state
+        store.save(progress)
+
+        changed = LearningStore(root=tmp_path).load("late-srs")
+        assert changed is not None
+        scheduler.set_desired_retention(changed, 0.97, now=second.timestamp)
+        store.save(changed)
+
+        reopened = LearningStore(root=tmp_path).load("late-srs")
+        assert reopened is not None
+        late = LearningEvidence(
+            evidence_id="late-book-attempt",
+            knowledge_point_id="kp1",
+            timestamp=start + 86400,
+            source="book",
+            result="correct",
+            quality=1.0,
+        )
+        reopened.learning_evidence.append(late)
+        scheduler.schedule_review(reopened.repetition_states["kp1"], KnowledgeType.CONCEPT, late)
+        reopened.review_queue = scheduler.build_review_queue(reopened, now=second.timestamp)
+        store.save(reopened)
+
+        restarted = LearningStore(root=tmp_path).load("late-srs")
+        assert restarted is not None
+        replayed = scheduler.replay(
+            KnowledgeType.CONCEPT,
+            restarted.learning_evidence,
+            desired_retention=restarted.desired_retention,
+        )
+        assert restarted.repetition_states["kp1"].model_dump() == replayed.model_dump()
+        assert [item.evidence_id for item in restarted.learning_evidence] == [
+            "guided-first",
+            "guided-second",
+            "late-book-attempt",
+        ]
+        assert restarted.review_queue[0].evidence_id == "late-book-attempt"
+
     def test_updated_at_auto_updates(self, store):
         lp = LearningProgress(book_id="book1")
         old_updated = lp.updated_at

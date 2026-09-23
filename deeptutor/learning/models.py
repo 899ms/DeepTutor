@@ -195,6 +195,11 @@ class RepetitionState(BaseModel):
     review_count: int = 0
     lapse_count: int = 0
     last_review_at: float | None = None
+    # The review (or initial schedule) that set ``next_review_at``. Practice
+    # inside one session updates ``last_review_at`` but keeps this anchor, so
+    # changing the target cannot silently postpone a previously due review.
+    last_scheduled_at: float | None = None
+    scheduled_after_failure: bool = False
 
 
 class ReviewTask(BaseModel):
