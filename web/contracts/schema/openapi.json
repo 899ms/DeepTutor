@@ -4963,6 +4963,17 @@
             "title": "Id",
             "type": "string"
           },
+          "last_sync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -8838,6 +8849,66 @@
           "title"
         ],
         "title": "SyllabusUnitRequest",
+        "type": "object"
+      },
+      "SyncFolderResponse": {
+        "description": "Response model for a linked-folder sync request.",
+        "properties": {
+          "file_count": {
+            "title": "File Count",
+            "type": "integer"
+          },
+          "files": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "folder_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Folder Path"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "modified_files": {
+            "title": "Modified Files",
+            "type": "integer"
+          },
+          "new_files": {
+            "title": "New Files",
+            "type": "integer"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "message",
+          "files",
+          "new_files",
+          "modified_files",
+          "file_count",
+          "task_id"
+        ],
+        "title": "SyncFolderResponse",
         "type": "object"
       },
       "SyncObjectIn": {
@@ -23579,7 +23650,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SyncFolderResponse"
+                }
               }
             },
             "description": "Successful Response"

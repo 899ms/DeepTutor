@@ -1,12 +1,16 @@
 export {
   addGitHubSource,
   addWebSource,
+  linkFolder,
   listGitHubSources,
+  listLinkedFolders,
   listWebSources,
   removeGitHubSource,
   removeWebSource,
   syncGitHubSources,
+  syncLinkedFolder,
   syncWebSources,
+  unlinkFolder,
 } from "./client";
 
 export type {
@@ -14,6 +18,7 @@ export type {
   AddWebSourcePayload,
   GitHubSource,
   GitHubSyncResult,
+  LinkedFolderInfo,
   WebSource,
   WebSyncResult,
   WebSyncSourceResult,

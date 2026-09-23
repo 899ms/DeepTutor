@@ -10,6 +10,8 @@ operations with a clear error instead of hanging indefinitely.
 
 from __future__ import annotations
 
+import asyncio
+from contextvars import ContextVar
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -24,6 +26,12 @@ def _llamaindex_modules() -> tuple[Any, Any, Any]:
     from deeptutor.services.rag.pipelines.llamaindex.pipeline import LlamaIndexPipeline
 
     return pipeline_module, storage_module, LlamaIndexPipeline
+
+
+@pytest.fixture(autouse=True)
+def _avoid_real_embedding_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda _callback: None)
 
 
 async def _async_noop(*args, **kwargs) -> None:
@@ -204,3 +212,113 @@ async def test_initialize_succeeds_when_indexing_completes(
     monkeypatch.setattr(storage_module, "create_index", lambda *a, **k: 7)
 
     assert await pipeline.initialize("kb", ["doc.pdf"]) is True
+
+
+@pytest.mark.asyncio
+async def test_finished_job_progress_callback_stops_leaking_into_next_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A worker left running after a run finishes must no longer write
+    progress into the shared slot.
+
+    The stall guard leaves the sync embedding worker alive when it raises.
+    Without an ownership check, that stale worker keeps calling the stored
+    callback and its batches land in whatever job grabs the slot next —
+    the "Embedding batches reset / keep going after N/N" leak (#1478).
+    """
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.05)
+    captured: dict = {}
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda cb: captured.update(cb=cb))
+    events: list[tuple[int, int]] = []
+
+    def user_cb(batch_num: int, total_batches: int) -> None:
+        events.append((batch_num, total_batches))
+
+    def quick() -> str:
+        captured["cb"](1, 1)
+        return "done"
+
+    assert (
+        await pipeline_module._run_with_stall_guard(
+            quick, progress_callback=user_cb, stall_timeout=1.0
+        )
+        == "done"
+    )
+
+    # The finished run's ownership has been released; a stale worker must not emit.
+    captured["cb"](9, 9)
+    assert events == [(1, 1)]
+
+
+@pytest.mark.asyncio
+async def test_stale_wrapper_from_finished_run_is_suppressed_after_ownership_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale worker from a finished run must not leak once a newer run owns
+    the progress slot.
+
+    This drives the ownership handoff directly (release + a simulated B taking
+    the slot) rather than racing two executors, pinning the invariant that
+    matters: once this run no longer owns the slot, its wrapper is a no-op, so
+    a worker thread left running by a stall can never feed batch events into
+    the next job (#1478).
+    """
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.05)
+    captured: dict = {}
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda cb: captured.update(cb=cb))
+    events_a: list[tuple[int, int]] = []
+
+    def quick_a() -> str:
+        captured["cb"](1, 1)
+        return "done-a"
+
+    assert (
+        await pipeline_module._run_with_stall_guard(
+            quick_a,
+            progress_callback=lambda b, t: events_a.append((b, t)),
+            stall_timeout=1.0,
+        )
+        == "done-a"
+    )
+    stale_a_cb = captured["cb"]
+    stale_a_cb(9, 9)
+
+    assert events_a == [(1, 1)]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_indexing_runs_keep_their_own_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Independent KB adapters must both receive progress during overlap."""
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.02)
+    adapter = ContextVar("test_embedding_adapter", default="")
+    callbacks: dict[str, Any] = {}
+    monkeypatch.setattr(
+        pipeline_module,
+        "set_progress_callback",
+        lambda cb: callbacks.__setitem__(adapter.get(), cb),
+    )
+    events: dict[str, list[tuple[int, int]]] = {"a": [], "b": []}
+
+    async def run(name: str) -> str:
+        adapter.set(name)
+
+        def work() -> str:
+            for batch in range(1, 5):
+                callbacks[name](batch, 4)
+                time.sleep(0.03)
+            return name
+
+        return await pipeline_module._run_with_stall_guard(
+            work,
+            progress_callback=lambda batch, total: events[name].append((batch, total)),
+            stall_timeout=0.5,
+        )
+
+    assert await asyncio.gather(run("a"), run("b")) == ["a", "b"]
+    assert events["a"] == [(batch, 4) for batch in range(1, 5)]
+    assert events["b"] == [(batch, 4) for batch in range(1, 5)]

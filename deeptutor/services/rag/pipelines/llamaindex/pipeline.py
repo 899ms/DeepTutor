@@ -75,9 +75,16 @@ async def _run_with_stall_guard(
     if stall_timeout is None:
         stall_timeout = _INDEX_STALL_TIMEOUT_SECONDS
 
+    # Each run has its own embedding adapter in the operation context. A
+    # process-global owner would silence healthy concurrent runs. Invalidate
+    # only this wrapper when its run ends, including on stall while a sync
+    # worker may still be alive.
+    active = True
     last_progress = {"at": time.monotonic()}
 
     def _heartbeat(*args: Any, **kwargs: Any) -> None:
+        if not active:
+            return
         last_progress["at"] = time.monotonic()
         if progress_callback is not None:
             progress_callback(*args, **kwargs)
@@ -91,21 +98,24 @@ async def _run_with_stall_guard(
         if not fut.cancelled():
             fut.exception()
 
-    while True:
-        done, _ = await asyncio.wait({future}, timeout=_INDEX_STALL_POLL_SECONDS)
-        if done:
-            return future.result()
-        # Reclaim the shared callback slot in case a concurrent job took it.
-        set_progress_callback(_heartbeat)
-        stalled_for = time.monotonic() - last_progress["at"]
-        if stalled_for > stall_timeout:
-            future.add_done_callback(_consume_terminal_exception)
-            raise IndexingStallError(
-                f"Indexing made no progress for {stalled_for:.0f}s while "
-                "embedding documents. The embedding provider may be accepting "
-                "requests without completing them; check the embedding "
-                "endpoint and retry."
-            )
+    try:
+        while True:
+            done, _ = await asyncio.wait({future}, timeout=_INDEX_STALL_POLL_SECONDS)
+            if done:
+                return future.result()
+            # Reclaim the shared callback slot in case a concurrent job took it.
+            set_progress_callback(_heartbeat)
+            stalled_for = time.monotonic() - last_progress["at"]
+            if stalled_for > stall_timeout:
+                future.add_done_callback(_consume_terminal_exception)
+                raise IndexingStallError(
+                    f"Indexing made no progress for {stalled_for:.0f}s while "
+                    "embedding documents. The embedding provider may be accepting "
+                    "requests without completing them; check the embedding "
+                    "endpoint and retry."
+                )
+    finally:
+        active = False
 
 
 class LlamaIndexPipeline:
