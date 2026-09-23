@@ -199,7 +199,6 @@ _SPACING_DROP = {
     "notag": "",
     "tag": "",
     "label": "",
-    "quad": " ",
 }
 
 _BLACKBOARD = {
@@ -347,6 +346,7 @@ _LOOSE_TEX = re.compile(
     )
     + r")(?![a-zA-Z])"
 )
+_WINDOWS_PATH = re.compile(r"(?<![A-Za-z0-9])(?:[A-Za-z]:\\|\\\\)[^\s]*")
 
 
 def _skip_ws(s: str, i: int) -> int:
@@ -705,19 +705,30 @@ def _replace_unicode(text: str) -> str:
 def _verbalize_loose_commands(text: str) -> str:
     """Convert leftover TeX commands in prose; never touch bare ``_`` / ``^``.
 
-    Gated on known TeX names so Windows paths like ``C:\\Users`` stay intact.
+    Windows paths are passed through even when nearby prose contains TeX.
     """
     if "\\" not in text or not _LOOSE_TEX.search(text):
         return text
-    out = _replace_blackboard_sets(text)
-    out = _until_stable(_unwrap_style_once, out)
-    out = _until_stable(_replace_frac_once, out)
-    out = _until_stable(_replace_sqrt_once, out)
-    out = _until_stable(_replace_binom_once, out)
-    out = _until_stable(_replace_limits_once, out)
-    out = _replace_named_commands(out, {**_GREEK, **_OPERATORS, **_FUNCTIONS, **_SPACING_DROP})
-    out = _drop_unknown_commands(out)
-    return out
+
+    def speak(segment: str) -> str:
+        out = _replace_blackboard_sets(segment)
+        out = _until_stable(_unwrap_style_once, out)
+        out = _until_stable(_replace_frac_once, out)
+        out = _until_stable(_replace_sqrt_once, out)
+        out = _until_stable(_replace_binom_once, out)
+        out = _until_stable(_replace_limits_once, out)
+        # Unknown commands in prose may be path segments or product names.
+        # Only an explicit math island is safe to clean up destructively.
+        return _replace_named_commands(out, {**_GREEK, **_OPERATORS, **_FUNCTIONS, **_SPACING_DROP})
+
+    parts: list[str] = []
+    offset = 0
+    for match in _WINDOWS_PATH.finditer(text):
+        parts.append(speak(text[offset : match.start()]))
+        parts.append(match.group())
+        offset = match.end()
+    parts.append(speak(text[offset:]))
+    return "".join(parts)
 
 
 def _emit_island(inner: str, *, math_speak: bool) -> str:
