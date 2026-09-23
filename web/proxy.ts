@@ -66,7 +66,7 @@ export function proxy(req: NextRequest): NextResponse {
   if (isBackendPath(pathname)) {
     return NextResponse.rewrite(new URL(pathname + search, API_BASE_URL), {
       request: {
-        headers: prepareBackendForwardHeaders(req.headers, req.nextUrl.host),
+        headers: prepareBackendForwardHeaders(req.headers),
       },
     });
   }

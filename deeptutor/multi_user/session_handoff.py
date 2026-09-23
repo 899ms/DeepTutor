@@ -29,9 +29,6 @@ CODE_LIFETIME_SECONDS = 300
 TICKET_LIFETIME_SECONDS = 120
 MAX_CODE_ATTEMPTS = 5
 CREATE_RATE_LIMIT = (5, 60)
-EXCHANGE_RATE_LIMIT = (10, 60)
-COMPLETE_RATE_LIMIT = (10, 60)
-GLOBAL_EXCHANGE_RATE_LIMIT = (30, 60)
 STATE_RETENTION_SECONDS = 600
 
 _DB_FILENAME = "session_handoff.sqlite3"
@@ -339,8 +336,10 @@ class SessionHandoffStore:
         now: int | None = None,
     ) -> str:
         current = int(time.time() if now is None else now)
-        self._rate_limit(f"exchange:{public_host}", EXCHANGE_RATE_LIMIT, now=now)
-        self._rate_limit("exchange:global", GLOBAL_EXCHANGE_RATE_LIMIT, now=now)
+        # An anonymous caller can submit arbitrary codes. A shared host/global
+        # quota would let a few bad requests lock out every legitimate handoff
+        # on that site. Codes are 256-bit secrets, looked up by hash; a bogus
+        # code costs one indexed lookup and cannot guess a valid record.
         code_hash = hash_secret(code)
         with self._connect() as connection:
             self._initialize(connection)
@@ -409,7 +408,8 @@ class SessionHandoffStore:
         now: int | None = None,
     ) -> str:
         current = int(time.time() if now is None else now)
-        self._rate_limit(f"complete:{public_host}", COMPLETE_RATE_LIMIT, now=now)
+        # As with exchange, a shared quota here would let anonymous invalid
+        # tickets prevent every user on this public host from signing in.
         ticket_hash = hash_secret(ticket)
         with self._connect() as connection:
             self._initialize(connection)

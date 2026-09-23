@@ -110,6 +110,8 @@ PRIVATE_LOGIN_HOSTS = frozenset(
 
 # Only a frontend proxy on an explicitly trusted peer may assert the browser
 # host. Never derive this identity from Host or X-Forwarded-* on a direct API call.
+# The frontend's incoming Host is meaningful only when its public ingress
+# rejects forged private hosts and direct access to its raw listener.
 def _trusted_proxy_ips() -> frozenset[str]:
     raw = os.environ.get("AUTH_TRUSTED_FRONTEND_PROXY_IPS", "127.0.0.1,::1")
     trusted: set[str] = set()

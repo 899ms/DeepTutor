@@ -54,6 +54,33 @@ def test_handoff_code_and_ticket_are_single_use(tmp_path, monkeypatch) -> None:
         store.consume_ticket(ticket=exchanged, public_host="app.example", now=106)
 
 
+def test_invalid_public_requests_cannot_exhaust_other_users_handoffs(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(session_handoff, "load_or_create_auth_secret", lambda: "test-secret")
+    store = session_handoff.SessionHandoffStore(tmp_path / "handoff.sqlite3")
+    ticket = session_handoff.encrypt_ticket_payload(
+        {"mode": "builtin", "host": "app.example", "exp": 220},
+        secret="test-secret",
+    )
+    record = store.create(
+        encrypted_ticket=ticket,
+        ticket_hash=session_handoff.hash_secret(ticket),
+        public_host="app.example",
+        now=100,
+    )
+
+    for index in range(40):
+        with pytest.raises(session_handoff.HandoffRejected):
+            store.exchange(code=f"invalid-code-{index:032d}", public_host="app.example", now=101)
+    exchanged = store.exchange(code=record.code, public_host="app.example", now=102)
+
+    for index in range(40):
+        with pytest.raises(session_handoff.HandoffRejected):
+            store.consume_ticket(
+                ticket=f"invalid-ticket-{index:032d}", public_host="app.example", now=103
+            )
+    assert store.consume_ticket(ticket=exchanged, public_host="app.example", now=104) == exchanged
+
+
 def test_expired_code_is_rejected_and_rate_limited(tmp_path, monkeypatch) -> None:
     store = session_handoff.SessionHandoffStore(tmp_path / "handoff.sqlite3")
     ticket = session_handoff.encrypt_ticket_payload(

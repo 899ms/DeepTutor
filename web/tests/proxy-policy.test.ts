@@ -126,7 +126,7 @@ test("backend forwarding replaces client identity headers with frontend host", (
       connection: "keep-alive, x-remove-me",
       cookie: "dt_token=session",
       forwarded: "for=1.2.3.4;host=attacker.example",
-      host: "attacker.example",
+      host: "app.example",
       "x-forwarded-for": "1.2.3.4",
       "x-forwarded-host": "attacker.example",
       "x-forwarded-proto": "https",
@@ -134,7 +134,6 @@ test("backend forwarding replaces client identity headers with frontend host", (
       "x-deeptutor-frontend-host": "attacker.example",
       "x-remove-me": "hop-by-hop",
     }),
-    "app.example",
   );
 
   assert.equal(headers.get("x-deeptutor-frontend-host"), "app.example");
@@ -150,6 +149,14 @@ test("backend forwarding replaces client identity headers with frontend host", (
   ]) {
     assert.equal(headers.has(name), false, name);
   }
+});
+
+test("backend forwarding does not invent a frontend host from the Next URL", () => {
+  const headers = prepareBackendForwardHeaders(new Headers({
+    "x-forwarded-host": "app.example",
+    "x-deeptutor-frontend-host": "app.example",
+  }));
+  assert.equal(headers.has("x-deeptutor-frontend-host"), false);
 });
 
 test("isAuthExempt does NOT exempt protected app routes", () => {

@@ -33,12 +33,11 @@ export interface UploadProxyDependencies {
 
 function forwardedHeaders(
   source: Headers,
-  { request, frontendHost }: { request: boolean; frontendHost?: string },
+  { request }: { request: boolean },
 ) {
-  const headers =
-    request && frontendHost
-      ? prepareBackendForwardHeaders(source, frontendHost)
-      : new Headers(source);
+  const headers = request
+    ? prepareBackendForwardHeaders(source)
+    : new Headers(source);
   for (const name of HOP_BY_HOP_HEADERS) {
     headers.delete(name);
   }
@@ -67,7 +66,6 @@ export async function forwardBackendUpload(
     method: request.method,
     headers: forwardedHeaders(request.headers, {
       request: true,
-      frontendHost: incomingUrl.host,
     }),
     signal: request.signal,
     redirect: "manual",
