@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { SettingRow, SettingSection, SettingsPageHeader } from "./shared";
-import { useUiSettings } from "@/features/settings/store";
+import { selectClass, SettingRow, SettingSection, SettingsPageHeader } from "./shared";
+import { RESPONSE_LANGUAGE_OPTIONS, useUiSettings } from "@/features/settings/store";
 import { useSettings } from "@/features/settings/store/SettingsStore";
 
 /** The en/zh segmented control both language rows use. */
@@ -65,10 +65,21 @@ export default function SettingsOverview() {
             "Sets the default language for chat and capability responses.",
           )}
           control={
-            <LanguageToggle
+            <select
               value={responseLanguage}
-              onChange={updateResponseLanguage}
-            />
+              onChange={(event) =>
+                void updateResponseLanguage(
+                  event.target.value as typeof responseLanguage,
+                )
+              }
+              className={`${selectClass} min-w-[160px] pr-8`}
+            >
+              {RESPONSE_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           }
         />
       </SettingSection>

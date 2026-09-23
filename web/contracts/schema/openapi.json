@@ -10076,8 +10076,19 @@
             "anyOf": [
               {
                 "enum": [
+                  "en",
                   "zh",
-                  "en"
+                  "zh-tw",
+                  "ja",
+                  "ko",
+                  "es",
+                  "fr",
+                  "de",
+                  "ru",
+                  "pt",
+                  "it",
+                  "ar",
+                  "pl"
                 ],
                 "type": "string"
               },
