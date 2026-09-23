@@ -867,6 +867,24 @@ export interface LinkedFolderProbe {
   error: string | null;
 }
 
+export interface LinkedFolderInfo {
+  id: string;
+  path: string;
+  added_at: string;
+  file_count: number;
+  last_sync: string | null;
+}
+
+export interface SyncFolderResponse {
+  message: string;
+  folder_path?: string | null;
+  files: string[];
+  new_files: number;
+  modified_files: number;
+  file_count: number;
+  task_id: string | null;
+}
+
 export async function probeLinkedFolder(payload: {
   folderPath: string;
   provider: string;
@@ -918,29 +936,15 @@ export async function connectLinkedFolder(payload: {
   };
 }
 
-export interface LinkedFolderInfo {
-  id: string;
-  path: string;
-  added_at: string;
-  file_count: number;
-  /** Server timestamp of the last completed sync; null before the first sync. */
-  last_sync?: string | null;
-}
-
-export interface FolderSyncResult {
-  message: string;
-  folder_path?: string;
-  new_files?: number;
-  modified_files?: number;
-  file_count: number;
-  task_id?: string;
-}
+// ── Linked document folders ──────────────────────────────────────────
 
 export async function listLinkedFolders(
   kbName: string,
+  options?: { signal?: AbortSignal },
 ): Promise<LinkedFolderInfo[]> {
   const res = await apiFetch(
     apiUrl(`/api/knowledge-bases/${encodeURIComponent(kbName)}/linked-folders`),
+    { signal: options?.signal },
   );
   if (!res.ok) {
     throw new Error(
@@ -995,7 +999,7 @@ export async function unlinkFolder(
 export async function syncLinkedFolder(
   kbName: string,
   folderId: string,
-): Promise<FolderSyncResult> {
+): Promise<SyncFolderResponse> {
   const res = await apiFetch(
     apiUrl(
       `/api/knowledge-bases/${encodeURIComponent(kbName)}/sync-folder/${encodeURIComponent(folderId)}`,
@@ -1004,10 +1008,11 @@ export async function syncLinkedFolder(
   );
   if (!res.ok) {
     throw new Error(
-      await readErrorDetail(res, `Folder sync failed (${res.status})`),
+      await readErrorDetail(res, `Failed to sync linked folder (${res.status})`),
     );
   }
-  return (await res.json()) as FolderSyncResult;
+  invalidateKnowledgeCaches();
+  return (await res.json()) as SyncFolderResponse;
 }
 
 export interface LightRagServerProbe {

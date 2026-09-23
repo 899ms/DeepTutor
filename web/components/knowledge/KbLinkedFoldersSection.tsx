@@ -1,368 +1,479 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  CheckCircle2,
   FolderSync,
   Loader2,
-  Plus,
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { TaskState } from "@/hooks/useKnowledgeProgress";
 import {
-  linkFolder,
-  listLinkedFolders,
-  syncLinkedFolder,
-  unlinkFolder,
-  type LinkedFolderInfo,
-} from "@/features/knowledge/api/sources";
-import { useKnowledgeProgress } from "@/hooks/useKnowledgeProgress";
-import { formatKnowledgeTimestamp } from "@/lib/knowledge-helpers";
+  formatKnowledgeTimestamp,
+  resolveProgressPercent,
+  type KnowledgeBase,
+} from "@/lib/knowledge-helpers";
+import type {
+  LinkedFolderInfo,
+  SyncFolderResponse,
+} from "@/features/knowledge/model/types";
+import { listLinkedFolders } from "@/features/knowledge/api/folders";
+import ProcessLogs from "@/components/common/ProcessLogs";
+import LinkFolderModal from "./LinkFolderModal";
 
 interface KbLinkedFoldersSectionProps {
-  kbName: string;
-  readOnly?: boolean;
+  kb: KnowledgeBase;
+  task?: TaskState;
+  onLinkFolder: (folderPath: string) => Promise<void>;
+  onUnlinkFolder: (folderId: string) => Promise<void>;
+  onSyncFolder: (folderId: string) => Promise<SyncFolderResponse>;
 }
 
 export default function KbLinkedFoldersSection({
-  kbName,
-  readOnly = false,
+  kb,
+  task,
+  onLinkFolder,
+  onUnlinkFolder,
+  onSyncFolder,
 }: KbLinkedFoldersSectionProps) {
   const { t } = useTranslation();
   const [folders, setFolders] = useState<LinkedFolderInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [pathInput, setPathInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
+  const [unlinkingId, setUnlinkingId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [activeSyncFolderId, setActiveSyncFolderId] = useState<string | null>(
+    null,
+  );
+  const [syncResults, setSyncResults] = useState<
+    Record<string, SyncFolderResponse>
+  >({});
+  const observedSyncTaskRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15_000);
+    setLoading(true);
+    setLoadError(null);
+    setError(null);
     try {
-      const list = await listLinkedFolders(kbName);
-      setFolders(list);
+      const result = await listLinkedFolders(kb.name, {
+        signal: controller.signal,
+      });
+      setFolders(result);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      let message: string;
+      if (err instanceof DOMException && err.name === "AbortError") {
+        message = t("Timed out loading linked folders. Click retry.");
+      } else {
+        message = err instanceof Error ? err.message : String(err);
+      }
+      setLoadError(message);
+      setError(message);
     } finally {
+      window.clearTimeout(timeout);
       setLoading(false);
     }
-  }, [kbName]);
+  }, [kb.name, t]);
 
-  const handleTaskComplete = useCallback(() => {
+  useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  const { startTask, tasksByKb, progressByKb } = useKnowledgeProgress({
-    onComplete: handleTaskComplete,
-  });
-  const task = tasksByKb[kbName];
-  const progress = progressByKb[kbName];
-
+  // A sync request returns before indexing completes. Refresh only after the
+  // shared task stream reaches a terminal state so last_sync comes from disk.
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      await refresh();
-      if (!active) return;
-    })();
-    return () => {
-      active = false;
-    };
-  }, [refresh]);
-
-  const handleLink = async () => {
-    const folderPath = pathInput.trim();
-    if (!folderPath || readOnly) return;
-
-    setSubmitting(true);
-    setError(null);
-    setNotice(null);
-    try {
-      await linkFolder(kbName, folderPath);
-      setPathInput("");
-      setShowForm(false);
-      setNotice(t("Folder linked."));
-      await refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setSubmitting(false);
+    if (task?.kind !== "sync" || !task.taskId) return;
+    if (task.executing) {
+      observedSyncTaskRef.current = task.taskId;
+      return;
     }
+    if (observedSyncTaskRef.current !== task.taskId) return;
+    observedSyncTaskRef.current = null;
+    setActiveSyncFolderId(null);
+    void refresh();
+  }, [refresh, task?.executing, task?.kind, task?.taskId]);
+
+  const activeSync =
+    syncingId !== null || (task?.kind === "sync" && task.executing);
+  const readOnly = Boolean(kb.read_only);
+
+  const handleLink = async (folderPath: string) => {
+    setError(null);
+    await onLinkFolder(folderPath);
+    await refresh();
   };
 
-  const handleUnlink = async (folderId: string) => {
-    if (readOnly) return;
-    setRemovingId(folderId);
+  const handleUnlink = async (folder: LinkedFolderInfo) => {
+    if (
+      !window.confirm(
+        t(
+          "Unlinking stops future syncs. Files already imported remain in this knowledge base.",
+        ),
+      )
+    ) {
+      return;
+    }
+    setUnlinkingId(folder.id);
     setError(null);
-    setNotice(null);
     try {
-      await unlinkFolder(kbName, folderId);
-      setNotice(t("Folder unlinked."));
-      await refresh();
+      await onUnlinkFolder(folder.id);
+      setFolders((current) => current.filter((item) => item.id !== folder.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setRemovingId(null);
+      setUnlinkingId(null);
     }
   };
 
   const handleSync = async (folder: LinkedFolderInfo) => {
     setSyncingId(folder.id);
+    setActiveSyncFolderId(folder.id);
     setError(null);
-    setNotice(null);
+    setSyncResults((current) => {
+      const next = { ...current };
+      delete next[folder.id];
+      return next;
+    });
+    let queued = false;
     try {
-      const result = await syncLinkedFolder(kbName, folder.id);
-      if (result.file_count === 0) {
-        setNotice(t("No new or modified files to sync."));
-      } else if (result.task_id) {
-        startTask({
-          kbName,
-          taskId: result.task_id,
-          kind: "folder_sync",
-          label: t("Syncing {{count}} changed file(s).", {
-            count: result.file_count,
-          }),
-          seed: {
-            stage: "processing",
-            message: t("Syncing {{count}} changed file(s).", {
-              count: result.file_count,
-            }),
-          },
-        });
+      const result = await onSyncFolder(folder.id);
+      setSyncResults((current) => ({ ...current, [folder.id]: result }));
+      if (!result.task_id) {
+        setActiveSyncFolderId(null);
+        await refresh();
       } else {
-        setNotice(
-          t("Sync started for {{count}} changed file(s).", {
-            count: result.file_count,
-          }),
-        );
+        queued = true;
+        // Remember the task before React receives the shared progress state;
+        // a very fast task can reach its terminal event between these renders.
+        observedSyncTaskRef.current = result.task_id;
       }
-      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSyncingId(null);
+      if (!queued) setActiveSyncFolderId(null);
     }
   };
 
-  if (loading) {
+  const retry = () => {
+    setLoadError(null);
+    void refresh();
+  };
+
+  if (folders.length === 0 && (loading || loadError)) {
     return (
-      <div className="flex items-center justify-center py-10">
-        <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+      <div className="flex flex-col items-center justify-center gap-2 py-10">
+        {loadError ? (
+          <>
+            <p
+              role="alert"
+              className="text-center text-[12px] text-red-600 dark:text-red-400"
+            >
+              {loadError}
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              disabled={loading}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[12px] font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            >
+              <RefreshCw className="h-3 w-3" />
+              {t("Retry")}
+            </button>
+          </>
+        ) : (
+          <Loader2
+            className="h-4 w-4 animate-spin text-[var(--muted-foreground)]"
+            aria-label={t("Loading linked folders")}
+          />
+        )}
       </div>
     );
   }
 
-  const percent =
-    typeof progress?.percent === "number"
-      ? progress.percent
-      : typeof progress?.progress_percent === "number"
-        ? progress.progress_percent
-        : null;
-
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-[13px] font-medium text-[var(--foreground)]">
+          <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--foreground)]">
+            <FolderSync className="h-4 w-4 text-[var(--muted-foreground)]" />
             {t("Linked folders")}
           </div>
-          <p className="mt-0.5 text-[11.5px] text-[var(--muted-foreground)]">
+          <p className="mt-0.5 max-w-2xl text-[11.5px] leading-relaxed text-[var(--muted-foreground)]">
             {t(
-              "Keep a local folder as a source. Uploads copy files once; links remember the source for manual synchronization.",
+              "Keep a local folder as a document source and sync new or modified supported files when you choose.",
             )}
           </p>
         </div>
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={() => setShowForm((value) => !value)}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-[var(--primary)] px-2.5 py-1 text-[12px] font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
-          >
-            <Plus className="h-3 w-3" />
-            {t("Link folder")}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => setLinkOpen(true)}
+          disabled={readOnly || activeSync}
+          className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-2 text-[12px] font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
+          title={
+            readOnly
+              ? t("Assigned knowledge bases are read-only.")
+              : activeSync
+                ? t("Wait for the current sync to finish.")
+                : undefined
+          }
+        >
+          <FolderSync className="h-3.5 w-3.5" />
+          {t("Link folder")}
+        </button>
       </div>
 
-      {error && (
-        <div className="rounded-md border border-red-200 bg-red-50/60 p-2.5 text-[11.5px] text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300">
-          {error}
-        </div>
-      )}
-      {notice && !error && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50/60 p-2.5 text-[11.5px] text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300">
-          {notice}
+      {readOnly && (
+        <div className="rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11.5px] text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-300">
+          {t("This knowledge base is read-only. Linked folders can be viewed but not changed.")}
         </div>
       )}
 
-      {showForm && !readOnly && (
-        <form
-          className="space-y-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleLink();
-          }}
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-200 bg-red-50/60 p-2.5 text-[11.5px] text-red-700 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-300"
         >
-          <label className="block">
-            <span className="mb-1 block text-[11px] font-medium text-[var(--muted-foreground)]">
-              {t("Folder path")}
-            </span>
-            <input
-              type="text"
-              value={pathInput}
-              aria-label={t("Folder path")}
-              onChange={(event) => setPathInput(event.target.value)}
-              placeholder={t("~/Documents/research-notes")}
-              className="w-full rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-1.5 font-mono text-[12.5px] text-[var(--foreground)] outline-none focus:border-[var(--primary)]"
-            />
-          </label>
-          <div className="flex items-center gap-2">
-            <button
-              type="submit"
-              disabled={submitting || !pathInput.trim()}
-              className="inline-flex items-center gap-1.5 rounded-md bg-[var(--primary)] px-3 py-1.5 text-[12px] font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {submitting && <Loader2 className="h-3 w-3 animate-spin" />}
-              {t("Link")}
-            </button>
+          <span className="min-w-0 flex-1 break-words">{error}</span>
+          {loadError && (
             <button
               type="button"
-              onClick={() => setShowForm(false)}
-              className="rounded-md px-3 py-1.5 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:text-[var(--foreground)]"
+              onClick={retry}
+              disabled={loading}
+              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-md border border-red-300 px-2.5 py-1 text-[12px] font-medium transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-800 dark:hover:bg-red-950/50"
             >
-              {t("Cancel")}
+              <RefreshCw className="h-3 w-3" />
+              {t("Retry")}
             </button>
-          </div>
-        </form>
+          )}
+        </div>
       )}
 
+      {task?.kind === "sync" &&
+        (task.taskId || task.logs.length > 0 || task.executing) && (
+          <SyncProgress task={task} progress={kb.progress} />
+        )}
+
       {folders.length === 0 ? (
-        <div className="rounded-lg border border-dashed border-[var(--border)] py-8 text-center">
-          <FolderSync className="mx-auto mb-2 h-6 w-6 text-[var(--muted-foreground)]" />
+        <div className="rounded-lg border border-dashed border-[var(--border)] px-4 py-10 text-center">
+          <FolderSync className="mx-auto mb-2 h-7 w-7 text-[var(--muted-foreground)]" />
           <p className="text-[12px] text-[var(--muted-foreground)]">
-            {t(
-              'No linked folders yet. Click "Link folder" to keep a local source in sync.',
-            )}
+            {t('No linked folders yet. Click "Link folder" to add a source.')}
           </p>
+          <button
+            type="button"
+            onClick={() => setLinkOpen(true)}
+            disabled={readOnly || activeSync}
+            className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-[12px] font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            <FolderSync className="h-3.5 w-3.5" />
+            {t("Link folder")}
+          </button>
         </div>
       ) : (
         <div className="space-y-2">
           {folders.map((folder) => (
-            <FolderCard
+            <LinkedFolderCard
               key={folder.id}
               folder={folder}
-              busy={syncingId === folder.id || removingId === folder.id}
-              syncing={syncingId === folder.id}
-              removing={removingId === folder.id}
+              result={syncResults[folder.id]}
               readOnly={readOnly}
+              busy={activeSync}
+              syncing={
+                activeSync &&
+                (activeSyncFolderId === null || activeSyncFolderId === folder.id)
+              }
+              unlinking={unlinkingId === folder.id}
               onSync={() => void handleSync(folder)}
-              onUnlink={() => void handleUnlink(folder.id)}
+              onUnlink={() => void handleUnlink(folder)}
             />
           ))}
         </div>
       )}
 
-      {task && (task.executing || task.error) && (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
-          <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--foreground)]">
-            {task.executing && (
-              <Loader2 className="h-3 w-3 animate-spin text-[var(--muted-foreground)]" />
-            )}
-            {task.executing ? task.label : task.error}
+      <p className="text-[11px] leading-relaxed text-[var(--muted-foreground)]">
+        {t(
+          "Sync now imports new or modified supported files. Deleted or renamed source files are not removed yet.",
+        )}
+      </p>
+
+      <LinkFolderModal
+        isOpen={linkOpen}
+        onClose={() => setLinkOpen(false)}
+        onSubmit={handleLink}
+      />
+    </div>
+  );
+}
+
+function LinkedFolderCard({
+  folder,
+  result,
+  readOnly,
+  busy,
+  syncing,
+  unlinking,
+  onSync,
+  onUnlink,
+}: {
+  folder: LinkedFolderInfo;
+  result?: SyncFolderResponse;
+  readOnly: boolean;
+  busy: boolean;
+  syncing: boolean;
+  unlinking: boolean;
+  onSync: () => void;
+  onUnlink: () => void;
+}) {
+  const { t } = useTranslation();
+  const addedAt = formatKnowledgeTimestamp(folder.added_at);
+  const lastSync = formatKnowledgeTimestamp(folder.last_sync ?? undefined);
+  const actionDisabled = readOnly || busy || unlinking;
+
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start gap-2">
+            <FolderSync className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
+            <code
+              title={folder.path}
+              className="min-w-0 break-all text-[12.5px] font-medium text-[var(--foreground)]"
+            >
+              {folder.path}
+            </code>
           </div>
-          {task.executing && percent !== null && (
-            <div className="mt-2 h-1 rounded-full bg-[var(--muted)]">
-              <div
-                className="h-1 rounded-full bg-[var(--primary)] transition-[width]"
-                style={{ width: `${Math.max(0, Math.min(100, percent))}%` }}
-              />
-            </div>
-          )}
+          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--muted-foreground)]">
+            <span>
+              {t("{{count}} tracked files", { count: folder.file_count })}
+            </span>
+            {addedAt && <span>{t("Linked {{time}}", { time: addedAt })}</span>}
+            <span>
+              {t("Last successful sync")}: {lastSync || t("Never synced")}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={onSync}
+            disabled={actionDisabled}
+            className="inline-flex min-h-9 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 text-[11.5px] font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45"
+            title={
+              readOnly
+                ? t("Assigned knowledge bases are read-only.")
+                : busy
+                  ? t("Wait for the current sync to finish.")
+                  : t("Check this folder for new or modified files")
+            }
+          >
+            {syncing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3 w-3" />
+            )}
+            {syncing ? t("Syncing…") : t("Sync now")}
+          </button>
+          <button
+            type="button"
+            onClick={onUnlink}
+            disabled={actionDisabled}
+            aria-label={t("Unlink {{path}}", { path: folder.path })}
+            title={t("Unlink folder")}
+            className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md border border-transparent px-2 py-2 text-[var(--muted-foreground)] transition-colors hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-45 dark:hover:bg-red-950/30"
+          >
+            {unlinking ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {result && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="mt-3 flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50/70 px-2.5 py-2 text-[11.5px] text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-300"
+        >
+          <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">
+            {result.task_id
+              ? `${t("Queued {{count}} files for indexing.", {
+                  count: result.file_count,
+                })} ${t("{{new}} new, {{modified}} modified.", {
+                  new: result.new_files,
+                  modified: result.modified_files,
+                })}`
+              : result.new_files || result.modified_files
+                ? t("{{new}} new, {{modified}} modified.", {
+                    new: result.new_files,
+                    modified: result.modified_files,
+                  })
+                : result.message}
+          </span>
         </div>
       )}
     </div>
   );
 }
 
-function FolderCard({
-  folder,
-  busy,
-  syncing,
-  removing,
-  readOnly,
-  onSync,
-  onUnlink,
+function SyncProgress({
+  task,
+  progress,
 }: {
-  folder: LinkedFolderInfo;
-  busy: boolean;
-  syncing: boolean;
-  removing: boolean;
-  readOnly: boolean;
-  onSync: () => void;
-  onUnlink: () => void;
+  task: TaskState;
+  progress?: KnowledgeBase["progress"];
 }) {
   const { t } = useTranslation();
-  const lastSync = formatKnowledgeTimestamp(folder.last_sync ?? undefined);
+  const percent = resolveProgressPercent(progress);
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <FolderSync className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
-          <span
-            className="truncate font-mono text-[12.5px] text-[var(--foreground)]"
-            title={folder.path}
-          >
-            {folder.path}
+    <div
+      className="space-y-2"
+      role="status"
+      aria-live="polite"
+      aria-busy={task.executing}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[var(--muted-foreground)]">
+        <span>{t(task.label || "Sync linked folder")}</span>
+        {task.executing && percent > 0 && (
+          <span className="font-medium text-[var(--foreground)]">
+            {percent}%
           </span>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-[var(--muted-foreground)]">
-          <span>
-            {t("Files")}: {folder.file_count}
-          </span>
-          <span>
-            {t("Added")}: {formatKnowledgeTimestamp(folder.added_at)}
-          </span>
-          {lastSync && (
-            <span>
-              {t("Last synced")}: {lastSync}
-            </span>
-          )}
-        </div>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          onClick={onSync}
-          disabled={busy}
-          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1 text-[11.5px] font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--muted)] disabled:opacity-50"
-        >
-          {syncing ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <RefreshCw className="h-3 w-3" />
-          )}
-          {syncing ? t("Syncing…") : t("Sync now")}
-        </button>
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={onUnlink}
-            disabled={busy}
-            title={t("Unlink folder")}
-            aria-label={t("Unlink folder")}
-            className="rounded-md p-1.5 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-red-600 disabled:opacity-50"
-          >
-            {removing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Trash2 className="h-3.5 w-3.5" />
-            )}
-          </button>
         )}
       </div>
+      <ProcessLogs
+        logs={task.logs}
+        executing={task.executing}
+        title={t("Sync Process")}
+      />
+      {task.executing && (
+        <div className="h-1.5 overflow-hidden rounded-full bg-[var(--border)]/70">
+          <div
+            className="h-full rounded-full bg-[var(--primary)] transition-all duration-300"
+            style={{ width: `${Math.max(percent, 4)}%` }}
+          />
+        </div>
+      )}
+      {task.error && (
+        <div
+          role="alert"
+          className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300"
+        >
+          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed">
+            {task.error}
+          </pre>
+        </div>
+      )}
     </div>
   );
 }

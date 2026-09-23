@@ -21,7 +21,12 @@ import {
   Star,
   Upload,
 } from "lucide-react";
-import type { KnowledgeUploadPolicy } from "@/features/knowledge/model/types";
+import type {
+  IndexingLLMSelection,
+  LinkedFolderInfo,
+  KnowledgeUploadPolicy,
+  SyncFolderResponse,
+} from "@/features/knowledge/model/types";
 import {
   formatKnowledgeTimestamp,
   isMarginNoteKb,
@@ -43,6 +48,7 @@ import KbSettingsSection from "./KbSettingsSection";
 import KbGitHubSourcesSection from "./KbGitHubSourcesSection";
 import KbLinkedFoldersSection from "./KbLinkedFoldersSection";
 import KbWebSourcesSection from "./KbWebSourcesSection";
+import KbLinkedFoldersSection from "./KbLinkedFoldersSection";
 import KbMarginNoteDevicesSection from "./KbMarginNoteDevicesSection";
 import KnowledgeEngineIcon, {
   knowledgeSourceIconId,
@@ -59,6 +65,15 @@ interface KnowledgeBaseDetailProps {
     files: File[],
     destSubdir?: string,
   ) => Promise<void>;
+  onLinkFolder: (
+    kbName: string,
+    folderPath: string,
+  ) => Promise<LinkedFolderInfo>;
+  onUnlinkFolder: (kbName: string, folderId: string) => Promise<void>;
+  onSyncFolder: (
+    kbName: string,
+    folderId: string,
+  ) => Promise<SyncFolderResponse>;
   onReindex: (
     kbName: string,
     configFingerprint?: string,
@@ -95,6 +110,9 @@ export default function KnowledgeBaseDetail({
   history,
   onCreate,
   onUpload,
+  onLinkFolder,
+  onUnlinkFolder,
+  onSyncFolder,
   onReindex,
   onRetry,
   onSetDefault,
@@ -305,6 +323,18 @@ export default function KnowledgeBaseDetail({
                       ? Promise.resolve()
                       : onUpload(knowledgeBaseRef(kb), files, destSubdir)
                   }
+                />
+              )}
+              {activeSection === "folders" && (
+                <KbLinkedFoldersSection
+                  key={kb.name}
+                  kb={kb}
+                  task={task}
+                  onLinkFolder={async (folderPath) => {
+                    await onLinkFolder(kb.name, folderPath);
+                  }}
+                  onUnlinkFolder={(folderId) => onUnlinkFolder(kb.name, folderId)}
+                  onSyncFolder={(folderId) => onSyncFolder(kb.name, folderId)}
                 />
               )}
               {activeSection === "versions" && (
