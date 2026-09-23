@@ -31,6 +31,7 @@ import {
   Activity,
   AlertCircle,
   ArrowRight,
+  ChevronRight,
   Compass,
   Download,
   ExternalLink,
@@ -112,7 +113,7 @@ const ANIM_MS = 220;
    together while dragging. */
 const VIEWER_WIDTH_VAR = "--viewer-width";
 const VIEWER_WIDTH_KEY = "dt:viewer-width";
-const VIEWER_WIDTH_DEFAULT = 620;
+const VIEWER_WIDTH_DEFAULT = 520;
 const VIEWER_WIDTH_MIN = 400;
 const VIEWER_WIDTH_MAX = 960;
 
@@ -766,6 +767,7 @@ function TabBar({
         <button
           type="button"
           onClick={onSelectHome}
+          aria-pressed={homeActive}
           className={`inline-flex shrink-0 items-center gap-1.5 rounded-t-md py-1.5 pl-2.5 pr-3 text-[11.5px] font-medium transition-colors ${
             homeActive
               ? "bg-[var(--card)] text-[var(--foreground)]"
@@ -862,7 +864,7 @@ function ActivityHome({
   onOpenLocalFile: (file: File) => void;
 }) {
   return (
-    <div className="h-full overflow-y-auto px-3 py-3">
+    <div className="h-full overflow-y-auto bg-[color-mix(in_srgb,var(--muted)_18%,var(--card))] px-4 pb-8 pt-4 sm:px-5">
       <ActivityBody
         activity={activity}
         open={open}
@@ -877,7 +879,7 @@ function ActivityHome({
   );
 }
 
-/** Compact "open a URL or local file" footer for the Activity home. */
+/** Two quiet action rows for opening a URL or local file as a viewer tab. */
 function ActivityOpener({
   onOpenWebTab,
   onOpenLocalFile,
@@ -907,46 +909,51 @@ function ActivityOpener({
   );
 
   return (
-    <div className="mt-3 space-y-2 border-t border-[var(--border)]/40 pt-3">
-      <div className="px-1 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--muted-foreground)]/70">
+    <section className="mt-4 overflow-hidden rounded-2xl border border-[var(--border)]/60 bg-[var(--card)] shadow-[0_2px_12px_color-mix(in_srgb,var(--foreground)_3%,transparent)]">
+      <h2 className="px-4 pb-1.5 pt-3 text-[12px] font-semibold text-[var(--foreground)]">
         {t("Open")}
-      </div>
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submitUrl();
-        }}
-        className="flex items-center gap-2 rounded-lg border border-[var(--border)]/55 bg-[var(--background)] px-2.5 py-1.5 transition-colors focus-within:border-[var(--primary)]/40"
-      >
-        <Globe
-          size={13}
-          strokeWidth={1.8}
-          className="shrink-0 text-[var(--muted-foreground)]"
-        />
-        <input
-          type="text"
-          value={urlInput}
-          onChange={(e) => setUrlInput(e.target.value)}
-          placeholder={t("https://example.com")}
-          className="min-w-0 flex-1 bg-transparent text-[12.5px] text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/60"
-        />
-        <button
-          type="submit"
-          disabled={!urlInput.trim()}
-          className="inline-flex shrink-0 items-center gap-1 rounded-md bg-[var(--primary)] px-2 py-1 text-[11px] font-medium text-[var(--primary-foreground)] transition-opacity disabled:opacity-30"
-          aria-label={t("Open URL")}
+      </h2>
+      <div className="px-2 pb-2">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitUrl();
+          }}
+          className="flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 transition-colors hover:bg-[var(--muted)]/45 focus-within:bg-[var(--muted)]/55 focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-[var(--ring)]"
         >
-          <ArrowRight size={11} strokeWidth={2.2} />
+          <Globe
+            size={16}
+            strokeWidth={1.7}
+            aria-hidden="true"
+            className="shrink-0 text-[var(--muted-foreground)]"
+          />
+          <input
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            aria-label={t("Open URL")}
+            placeholder={t("https://example.com")}
+            className="min-w-0 flex-1 bg-transparent text-[12px] text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]/70"
+          />
+          <button
+            type="submit"
+            disabled={!urlInput.trim()}
+            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ring)] disabled:bg-[var(--muted)] disabled:text-[var(--muted-foreground)] disabled:opacity-60"
+            aria-label={t("Open URL")}
+          >
+            <ArrowRight size={13} strokeWidth={2} />
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          className="group flex min-h-10 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[12px] font-medium text-[var(--foreground)] transition-colors hover:bg-[var(--muted)]/55 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--ring)]"
+        >
+          <FileUp size={16} strokeWidth={1.7} aria-hidden="true" className="shrink-0 text-[var(--muted-foreground)]" />
+          <span className="min-w-0 flex-1 truncate">{t("Open a local file")}</span>
+          <ChevronRight size={14} strokeWidth={1.7} aria-hidden="true" className="shrink-0 text-[var(--muted-foreground)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
         </button>
-      </form>
-      <button
-        type="button"
-        onClick={() => fileInputRef.current?.click()}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border)]/55 bg-[var(--background)] px-3 py-1.5 text-[12px] font-medium text-[var(--muted-foreground)] transition-colors hover:border-[var(--primary)]/35 hover:text-[var(--primary)]"
-      >
-        <FileUp size={13} strokeWidth={1.8} />
-        {t("Open a local file")}
-      </button>
+      </div>
       <input
         ref={fileInputRef}
         type="file"
@@ -955,7 +962,7 @@ function ActivityOpener({
         aria-hidden="true"
         tabIndex={-1}
       />
-    </div>
+    </section>
   );
 }
 

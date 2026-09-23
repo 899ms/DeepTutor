@@ -944,9 +944,9 @@ body[data-picker-open] .dt-breathing-text {
   /* Viewer panel (tabbed file/web preview, opened from message attachments
      or assistant links) is next-widest. Wins over the activity panel when
      both are open. Width is user-resizable, so the squeeze tracks the
-     ``--viewer-width`` var the panel writes (falls back to 620px). */
+     ``--viewer-width`` var the panel writes (falls back to 520px). */
   .chat-preview-shell[data-preview-open="false"][data-viewer-open="true"] {
-    padding-right: min(var(--viewer-width, 620px), 92vw);
+    padding-right: min(var(--viewer-width, 520px), 92vw);
   }
 }
 
