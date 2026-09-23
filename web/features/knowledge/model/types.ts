@@ -31,6 +31,8 @@ export type {
   PreflightCheck,
   RagProviderSummary,
   WebSource,
+  WebSourceSchedulePayload,
+  WebSourceSyncJob,
   WebSyncResult,
   WebSyncSourceResult,
   WeKnoraProbe,
