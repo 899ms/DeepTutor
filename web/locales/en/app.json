@@ -5013,5 +5013,19 @@
   "{{count}} partners": "{{count}} partners",
   "{{count}} skills": "{{count}} skills",
   "SVG / chart / diagram generation loop.": "SVG / chart / diagram generation loop.",
-  "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.": "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty."
+  "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.": "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.",
+  "Other — write your own reply…": "Other — write your own reply…",
+  "Pick an option or type your own to continue.": "Pick an option or type your own to continue.",
+  "{{count}} questions — tap a tab to switch.": "{{count}} questions — tap a tab to switch.",
+  "Learning progress": "Learning progress",
+  "Review your own reading and learning activity.": "Review your own reading and learning activity.",
+  "Unable to load learning progress": "Unable to load learning progress",
+  "Loading progress": "Loading progress",
+  "No learning activity yet": "No learning activity yet",
+  "Learning actions": "Learning actions",
+  "Reading progress": "Reading progress",
+  "No reading progress yet": "No reading progress yet",
+  "Furthest reading progress": "Furthest reading progress",
+  "No learning actions yet": "No learning actions yet",
+  "Locator": "Locator"
 }

@@ -5013,5 +5013,19 @@
   "{{count}} partners": "{{count}} 个伙伴",
   "{{count}} skills": "{{count}} 个技能",
   "SVG / chart / diagram generation loop.": "SVG / 图表 / 图示生成流程。",
-  "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.": "推理模型可能把其中大部分用于内部推理；如果画布返回为空，请提高该上限。"
+  "A reasoning model can spend most of this on internal reasoning; raise it if a canvas comes back empty.": "推理模型可能把其中大部分用于内部推理；如果画布返回为空，请提高该上限。",
+  "Other — write your own reply…": "其他 — 自定义回复…",
+  "Pick an option or type your own to continue.": "选择一个选项或输入自定义回复以继续。",
+  "{{count}} questions — tap a tab to switch.": "{{count}} 个问题 — 点击标签切换。",
+  "Learning progress": "学习进度",
+  "Review your own reading and learning activity.": "查看你自己的阅读与学习活动。",
+  "Unable to load learning progress": "无法加载学习进度",
+  "Loading progress": "正在加载进度",
+  "No learning activity yet": "还没有学习活动",
+  "Learning actions": "学习操作",
+  "Reading progress": "阅读进度",
+  "No reading progress yet": "还没有阅读进度",
+  "Furthest reading progress": "最远阅读进度",
+  "No learning actions yet": "还没有学习操作",
+  "Locator": "位置"
 }
