@@ -40,6 +40,7 @@ import {
   type RegistryEdit,
 } from "@/lib/provider-registry";
 import { browserStorage } from "@/shared/storage";
+import type { AppLanguage } from "@/i18n/init";
 
 import {
   CONNECTABLE_SERVICES,
@@ -86,8 +87,8 @@ export type {
 
 export type UiSettings = {
   theme: "light" | "dark" | "glass" | "snow";
-  language: "en" | "zh" | "fr";
-  response_language: "en" | "zh" | "fr";
+  language: AppLanguage;
+  response_language: AppLanguage;
   code_block_theme: string;
   code_block_show_line_numbers: boolean;
   code_block_wrap_long_lines: boolean;
