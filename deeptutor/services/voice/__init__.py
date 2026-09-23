@@ -53,9 +53,7 @@ async def synthesize_speech(
         config.response_format = response_format
     speak_math = _math_speak_from_settings() if math_speak is None else math_speak
     prepared = (
-        strip_markdown_for_speech(
-            text, max_chars=config.max_input_chars, math_speak=speak_math
-        )
+        strip_markdown_for_speech(text, max_chars=config.max_input_chars, math_speak=speak_math)
         if strip_markdown
         else text.strip()
     )
