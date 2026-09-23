@@ -469,7 +469,21 @@ async def require_admin(
     return payload
 
 
-def _learning_surface_for_path(path: str, method: str = "GET") -> str:
+_LEARNER_KB_READ_ROUTES = frozenset(
+    {
+        "/api/knowledge-bases",
+        "/api/knowledge-bases/{kb_name}",
+        "/api/knowledge-bases/{kb_name}/files",
+        "/api/knowledge-bases/{kb_name}/files/{filename:path}",
+        "/api/knowledge-bases/{kb_name}/file-preview-text/{filename:path}",
+        "/api/knowledge-bases/{kb_name}/progress",
+    }
+)
+
+
+def _learning_surface_for_path(
+    path: str, method: str = "GET", *, route_path: str | None = None
+) -> str:
     normalized = "/" + str(path or "").lstrip("/")
     for root, surface in (
         ("/api/reading", "reading"),
@@ -485,11 +499,12 @@ def _learning_surface_for_path(path: str, method: str = "GET") -> str:
     ):
         if normalized == root or normalized.startswith(f"{root}/"):
             return surface
-    # Knowledge-center browsing is a legitimate learner activity, but KB
-    # mutations affect shared/admin-owned resources — read-only methods only.
-    if method.upper() in ("GET", "HEAD", "OPTIONS") and (
-        normalized == "/api/knowledge-bases"
-        or normalized.startswith("/api/knowledge-bases/")
+    # Match the resolved route template, not just the URL prefix: this keeps
+    # admin diagnostics and engine configuration GETs out of the learner shell.
+    if (
+        method.upper() == "GET"
+        and (normalized == "/api/knowledge-bases" or normalized.startswith("/api/knowledge-bases/"))
+        and route_path in _LEARNER_KB_READ_ROUTES
     ):
         return "reading"
     return ""
@@ -503,7 +518,14 @@ async def require_learning_surface(
     from deeptutor.multi_user.learning_access import assert_learning_surface
 
     try:
-        assert_learning_surface(_learning_surface_for_path(request.url.path, request.method))
+        route = request.scope.get("route")
+        assert_learning_surface(
+            _learning_surface_for_path(
+                request.url.path,
+                request.method,
+                route_path=getattr(route, "path", None),
+            )
+        )
     except PermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
 

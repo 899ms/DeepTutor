@@ -657,7 +657,7 @@ async def put_guardian_restrictions(
     payload: GuardianRestrictionsPayload,
     current: object = Depends(require_auth),
 ) -> dict[str, Any]:
-    _learner_username, learner_record, actor_user_id, is_admin = _require_guardian_access(
+    learner_username, learner_record, actor_user_id, is_admin = _require_guardian_access(
         current, learner_user_id, "manage_restrictions"
     )
     available_extensions = {
@@ -673,14 +673,10 @@ async def put_guardian_restrictions(
     policy = grant.get("learning_policy")
     if not isinstance(policy, dict):
         # Assigning guardian restrictions is what makes an account a learning
-        # account. Seed the default learning policy and flip the preset to
-        # "learner" so the frontend renders the scoped learner shell instead
-        # of the full app (a `standard` preset + `learning_policy` mix makes
-        # the client load admin surfaces that all default-deny to 403, #1222).
+        # account. Seed the default learning policy; the preset is switched
+        # only after the updated grant has passed validation and been saved.
         grant = deepcopy(learner_grant(learner_user_id))
         policy = grant.get("learning_policy")
-        if isinstance(policy, dict) and _learner_username:
-            set_preset(_learner_username, "learner")
     if not isinstance(policy, dict):
         raise HTTPException(status_code=409, detail="Learner account has no learning policy")
     reading = policy.get("reading")
@@ -698,6 +694,8 @@ async def put_guardian_restrictions(
         grant = save_grant(learner_user_id, grant)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if learner_record.get("preset") != "learner" and not set_preset(learner_username, "learner"):
+        raise HTTPException(status_code=409, detail="Learner account is no longer available")
     restrictions = _guardian_restrictions(grant)
     _log_supervisor_action(
         "guardian_restrictions_set",
