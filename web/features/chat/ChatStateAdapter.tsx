@@ -184,6 +184,9 @@ export interface ChatState {
   /** Edit-branching: keyed by stringified parent_message_id (or "null"
    *  for the root). Empty means "default to latest sibling everywhere". */
   selectedBranches: Record<string, number>;
+  /** True when the last turn ended in a failure (not a user cancel) and
+   *  the session is no longer streaming. Drives the Resend affordance. */
+  lastTurnFailed: boolean;
 }
 
 export interface SessionConfiguration {
@@ -439,6 +442,7 @@ function createSessionEntry(
     lastSeq: 0,
     updatedAt: Date.now(),
     selectedBranches: {},
+    lastTurnFailed: false,
   };
 }
 
@@ -1314,6 +1318,10 @@ interface ChatContextValue {
         },
   ) => Promise<boolean>;
   regenerateLastMessage: () => void;
+  /** Re-send the last user message after a failed turn, preserving the
+   *  original request snapshot (attachments, capability, tools, KB, etc.)
+   *  so the new turn runs with the same context as the failed one. */
+  resendLastMessage: () => void;
   deleteTurn: (messageId: number) => Promise<void>;
   /** Re-send a user message under a new branch (sibling of the original).
    *  Uses the composer's current capability / refs — only the text is
@@ -2662,8 +2670,38 @@ export function ChatStateAdapterProvider({
     });
   }, [sendThroughRunner]);
 
+  const resendLastMessage = useCallback(() => {
+    const currentState = stateRef.current;
+    const key = currentState.selectedKey;
+    if (!key) return;
+    const session = currentState.sessions[key];
+    if (!session || !session.sessionId) return;
+    if (session.isStreaming) return;
+    if (session.status !== "failed" && session.status !== "rejected") return;
+    const lastUser = [...session.messages]
+      .reverse()
+      .find((m) => m.role === "user" && m.requestSnapshot);
+    if (!lastUser?.requestSnapshot) return;
+    // Remove the trailing failed assistant bubble so the new turn's
+    // STREAM_START placeholder replaces it rather than stacking below.
+    dispatch({ type: "POP_LAST_ASSISTANT", key });
+    const snapshot = lastUser.requestSnapshot;
+    sendMessage(
+      snapshot.content,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        displayUserMessage: false,
+        requestSnapshotOverride: snapshot,
+      },
+    );
+  }, [sendMessage]);
+
   const derivedState = useMemo<ChatState>(() => {
     const current = ensureSelectedSession(state);
+    const lastMsg = current.messages[current.messages.length - 1];
     return {
       sessionKey: current.key,
       sessionId: current.sessionId,
@@ -2685,6 +2723,10 @@ export function ChatStateAdapterProvider({
       currentStage: current.currentStage,
       language: current.language,
       selectedBranches: current.selectedBranches,
+      lastTurnFailed:
+        !current.isStreaming &&
+        (current.status === "failed" || current.status === "rejected") &&
+        lastMsg?.role === "assistant",
     };
   }, [state]);
 
@@ -2921,6 +2963,7 @@ export function ChatStateAdapterProvider({
       cancelStreamingTurn,
       submitUserReply,
       regenerateLastMessage,
+      resendLastMessage,
       deleteTurn,
       editMessage,
       switchBranch,
@@ -2951,6 +2994,7 @@ export function ChatStateAdapterProvider({
       cancelStreamingTurn,
       submitUserReply,
       regenerateLastMessage,
+      resendLastMessage,
       deleteTurn,
       editMessage,
       switchBranch,
