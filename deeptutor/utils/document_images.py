@@ -202,6 +202,7 @@ def build_marker(image: EmbeddedImage) -> str:
     """The canonical in-text marker for one image."""
     return f"[图片 {image_index_from_name(image.name)}: {image.name}]"
 
+
 _MARKER_PATTERN = re.compile(r"\[图片 (\d+): ([^\]\s]+)\]")
 
 
@@ -505,9 +506,7 @@ def _rels_for(member: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def extract_pdf_images(
-    data: bytes, *, budget: ImageBudget | None = None
-) -> PdfImages:
+def extract_pdf_images(data: bytes, *, budget: ImageBudget | None = None) -> PdfImages:
     """Raster images per page via PyMuPDF, deduplicated across the document.
 
     Running headers/footers embed the same logo xref on every page; only the
@@ -544,9 +543,10 @@ def extract_pdf_images(
                     except Exception:
                         continue
                     raw = extracted.get("image") or b""
-                    if int(extracted.get("width") or 0) < 64 or int(
-                        extracted.get("height") or 0
-                    ) < 64:
+                    if (
+                        int(extracted.get("width") or 0) < 64
+                        or int(extracted.get("height") or 0) < 64
+                    ):
                         continue
                     ext = _normalise_ext("." + (extracted.get("ext") or ""))
                     if ext in {".emf", ".wmf"}:

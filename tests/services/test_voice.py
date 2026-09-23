@@ -147,9 +147,7 @@ def test_strip_markdown_drops_unpaired_dollars() -> None:
 
 
 def test_strip_markdown_verbalizes_fractions_roots_and_greek() -> None:
-    out = strip_markdown_for_speech(
-        r"Take $\frac{1}{2}$ of $\sqrt{x}$ and $\alpha + \beta$."
-    )
+    out = strip_markdown_for_speech(r"Take $\frac{1}{2}$ of $\sqrt{x}$ and $\alpha + \beta$.")
     assert "$" not in out
     assert "\\" not in out
     assert "{" not in out and "}" not in out

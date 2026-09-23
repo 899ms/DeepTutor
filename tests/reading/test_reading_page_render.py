@@ -64,9 +64,7 @@ def _prose(label: str) -> str:
 def _draw_diagram(page) -> None:
     """Ten vector primitives — comfortably past the render gate of 8."""
     for index in range(4):
-        page.draw_line(
-            pymupdf.Point(72, 120 + index * 12), pymupdf.Point(300, 120 + index * 12)
-        )
+        page.draw_line(pymupdf.Point(72, 120 + index * 12), pymupdf.Point(300, 120 + index * 12))
     for index in range(3):
         page.draw_rect(pymupdf.Rect(72, 220 + index * 34, 220, 244 + index * 34))
     for index in range(3):
@@ -82,9 +80,7 @@ def _build_pdf(path: Path, *, embedded_images: int = 0) -> None:
         rect = pymupdf.Rect(72, 380 + index * 60, 260, 440 + index * 60)
         page.insert_image(rect, stream=_png_bytes(seed=index + 1))
     text_page = doc.new_page(width=612, height=792)
-    text_page.insert_textbox(
-        pymupdf.Rect(72, 72, 540, 600), _prose("Page two."), fontsize=11
-    )
+    text_page.insert_textbox(pymupdf.Rect(72, 72, 540, 600), _prose("Page two."), fontsize=11)
     doc.save(str(path))
     doc.close()
 
@@ -157,9 +153,7 @@ def test_attachments_truncate_to_max_with_render_first(reading_home: Path) -> No
     manifest = store.ingest(source)
     _write_media_index(store, manifest.material_id, count=5)
 
-    attachments = _reading_viewport_image_attachments(
-        manifest.material_id, {"locator": 1}
-    )
+    attachments = _reading_viewport_image_attachments(manifest.material_id, {"locator": 1})
 
     assert len(attachments) == READING_VIEWPORT_MAX_IMAGES == 4
     assert attachments[0]["id"].startswith("rp-")

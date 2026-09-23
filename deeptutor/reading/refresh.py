@@ -87,9 +87,7 @@ def _refresh_document(store: ReadingStore, material_id: str) -> Any:
     return refresh(material_id)
 
 
-async def _caption_material_media(
-    store: ReadingStore, material_id: str, *, force: bool
-) -> int:
+async def _caption_material_media(store: ReadingStore, material_id: str, *, force: bool) -> int:
     """Caption one material's media, importing the captions module lazily.
 
     Deferred so ``--dry-run`` keeps working before ``captions.py`` lands.
@@ -100,9 +98,7 @@ async def _caption_material_media(
         raise ReadingError(
             "captioning is unavailable: deeptutor.reading.captions is not importable"
         ) from exc
-    return int(
-        await caption_material_media(material_id, store=store, force=force, limit=None)
-    )
+    return int(await caption_material_media(material_id, store=store, force=force, limit=None))
 
 
 async def refresh_materials(

@@ -152,9 +152,7 @@ _WHITESPACE = re.compile(r"[ \t]+")
 _BLANK_LINES = re.compile(r"\n{3,}")
 
 
-def strip_markdown_for_speech(
-    text: str, *, max_chars: int = 0, math_speak: bool = True
-) -> str:
+def strip_markdown_for_speech(text: str, *, max_chars: int = 0, math_speak: bool = True) -> str:
     """Reduce Markdown to plain prose suitable for TTS.
 
     Drops code blocks and tables outright (they read terribly), unwraps links

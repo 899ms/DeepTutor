@@ -66,9 +66,7 @@ def test_unrelated_models_are_untouched(model: str) -> None:
 
 @pytest.mark.parametrize("model", ["claude-sonnet-5", "claude-opus-4-8"])
 @pytest.mark.parametrize("binding", ["openai", "anthropic", "no-such-provider"])
-def test_claude_models_that_deprecated_temperature_never_send_it(
-    binding: str, model: str
-) -> None:
+def test_claude_models_that_deprecated_temperature_never_send_it(binding: str, model: str) -> None:
     """Anthropic answers HTTP 400 ``\`temperature\` is deprecated for this
     model.`` for Sonnet 5 and Opus 4.8. Haiku 4.5 still accepts it, so the
     rule names models, not the vendor prefix.

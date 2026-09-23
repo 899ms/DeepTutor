@@ -54,9 +54,7 @@ def test_learning_surface_map(path: str, method: str, expected: str) -> None:
     assert _learning_surface_for_path(path, method) == expected
 
 
-def test_put_restrictions_flips_standard_preset_to_learner(
-    mu_isolated_root, seed_user
-):
+def test_put_restrictions_flips_standard_preset_to_learner(mu_isolated_root, seed_user):
     """PUT restrictions on a standard-preset account seeds the policy and
     flips the account preset to ``learner`` (#1222 preset/policy mix)."""
     import asyncio
