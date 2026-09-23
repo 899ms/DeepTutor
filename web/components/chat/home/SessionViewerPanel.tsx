@@ -193,7 +193,7 @@ export interface SessionViewerPanelHandle {
   focusActivityHome(): void;
 }
 
-interface SessionViewerPanelProps {
+export interface SessionViewerPanelProps {
   open: boolean;
   sessionId: string | null;
   onClose: () => void;

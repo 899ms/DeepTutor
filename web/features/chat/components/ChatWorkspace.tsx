@@ -53,7 +53,7 @@ import { buildSessionActivity } from "@/components/chat/home/SessionActivityPane
 import Tooltip from "@/shared/ui/Tooltip";
 import SessionViewerPanel, {
   type SessionViewerPanelHandle,
-} from "@/components/chat/home/SessionViewerPanel";
+} from "@/components/chat/home/LazySessionViewerPanel";
 import {
   QuizFollowupProvider,
   useQuizFollowupController,
