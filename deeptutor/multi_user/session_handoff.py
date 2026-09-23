@@ -380,13 +380,17 @@ class SessionHandoffStore:
                         )
                     connection.commit()
                     raise HandoffRejected("Pairing code is not valid for this site")
+                claims = decrypt_ticket_payload(str(row["encrypted_ticket"]))
+                claims["exp"] = current + TICKET_LIFETIME_SECONDS
+                fresh_ticket = encrypt_ticket_payload(claims)
                 connection.execute(
                     """
                     UPDATE handoff_records
-                       SET code_consumed_at=?, failed_attempts=0
+                       SET code_consumed_at=?, failed_attempts=0,
+                           encrypted_ticket=?, ticket_hash=?
                      WHERE code_hash=? AND code_consumed_at IS NULL
                     """,
-                    (current, code_hash),
+                    (current, fresh_ticket, hash_secret(fresh_ticket), code_hash),
                 )
                 connection.commit()
             except HandoffError:
@@ -395,7 +399,7 @@ class SessionHandoffStore:
             except Exception:
                 connection.rollback()
                 raise
-        return str(row["encrypted_ticket"])
+        return fresh_ticket
 
     def consume_ticket(
         self,
@@ -424,7 +428,7 @@ class SessionHandoffStore:
                     row is None
                     or row["ticket_consumed_at"] is not None
                     or row["code_consumed_at"] is None
-                    or row["expires_at"] + TICKET_LIFETIME_SECONDS <= current
+                    or row["code_consumed_at"] + TICKET_LIFETIME_SECONDS <= current
                 ):
                     if row is not None:
                         connection.execute(

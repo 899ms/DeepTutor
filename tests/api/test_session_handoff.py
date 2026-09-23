@@ -7,10 +7,20 @@ import sqlite3
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 from deeptutor.api.routers import auth as auth_router
 from deeptutor.multi_user import session_handoff
 from deeptutor.services import auth as auth_service
+
+
+def _loopback_proxy(app):
+    async def forwarded(scope, receive, send):
+        if scope["type"] == "http":
+            scope = {**scope, "client": ("127.0.0.1", 12345)}
+        await app(scope, receive, send)
+
+    return forwarded
 
 
 def _handoff_client(
@@ -45,7 +55,7 @@ def _handoff_client(
 
     app = FastAPI()
     app.include_router(auth_router.router, prefix="/api/auth")
-    return TestClient(app), bearer
+    return TestClient(_loopback_proxy(app)), bearer
 
 
 def test_private_create_public_exchange_and_complete(tmp_path, monkeypatch) -> None:
@@ -194,7 +204,7 @@ def test_private_login_host_policy_gates_password_login(tmp_path, monkeypatch) -
 
     app = FastAPI()
     app.add_api_route("/login", auth_router.login, methods=["POST"])
-    with TestClient(app) as client:
+    with TestClient(_loopback_proxy(app)) as client:
         refused = client.post(
             "/login",
             headers={"x-deeptutor-frontend-host": "app.example"},
@@ -208,3 +218,60 @@ def test_private_login_host_policy_gates_password_login(tmp_path, monkeypatch) -
 
     assert refused.status_code == 403
     assert allowed.status_code == 200
+
+
+def test_direct_backend_request_cannot_forge_private_frontend_host(tmp_path, monkeypatch) -> None:
+    _, bearer = _handoff_client(tmp_path, monkeypatch)
+    app = FastAPI()
+    app.include_router(auth_router.router, prefix="/api/auth")
+    with TestClient(app) as direct:
+        response = direct.post(
+            "/api/auth/session-handoff",
+            headers={
+                "x-deeptutor-frontend-host": "private.example:8443",
+                "host": "private.example:8443",
+                "Authorization": f"Bearer {bearer}",
+            },
+            json={"public_origin": "https://app.example"},
+        )
+    assert response.status_code == 403
+
+
+def test_pairing_ticket_expires_after_exchange_even_near_code_expiry(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(session_handoff, "load_or_create_auth_secret", lambda: "test-secret")
+    store = session_handoff.SessionHandoffStore(tmp_path / "handoff.sqlite3")
+    created_at = 1000
+    ticket = session_handoff.encrypt_ticket_payload(
+        {"host": "app.example", "exp": created_at + 420}
+    )
+    record = store.create(
+        encrypted_ticket=ticket,
+        ticket_hash=session_handoff.hash_secret(ticket),
+        public_host="app.example",
+        now=created_at,
+    )
+    exchanged_at = created_at + session_handoff.CODE_LIFETIME_SECONDS - 1
+    fresh = store.exchange(code=record.code, public_host="app.example", now=exchanged_at)
+    assert (
+        session_handoff.decrypt_ticket_payload(fresh)["exp"]
+        == exchanged_at + session_handoff.TICKET_LIFETIME_SECONDS
+    )
+    assert (
+        store.consume_ticket(ticket=fresh, public_host="app.example", now=exchanged_at + 119)
+        == fresh
+    )
+
+
+def test_pairing_ticket_rejects_completion_after_its_exchange_window(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(session_handoff, "load_or_create_auth_secret", lambda: "test-secret")
+    store = session_handoff.SessionHandoffStore(tmp_path / "handoff.sqlite3")
+    ticket = session_handoff.encrypt_ticket_payload({"host": "app.example", "exp": 2420})
+    record = store.create(
+        encrypted_ticket=ticket,
+        ticket_hash=session_handoff.hash_secret(ticket),
+        public_host="app.example",
+        now=2000,
+    )
+    exchanged = store.exchange(code=record.code, public_host="app.example", now=2299)
+    with pytest.raises(session_handoff.HandoffRejected):
+        store.consume_ticket(ticket=exchanged, public_host="app.example", now=2419)

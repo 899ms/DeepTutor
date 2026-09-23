@@ -174,3 +174,21 @@ def test_batch_delete_reports_partial_results_and_protects_current_admin(batch_c
         item["username"] for item in client.get("/api/auth/users", headers=headers["admin"]).json()
     }
     assert usernames == {"root"}
+
+
+def test_import_accepts_normalized_csv_header_without_losing_row_values(batch_client):
+    client, headers = batch_client
+    response = client.post(
+        "/api/auth/users/import",
+        files={
+            "file": (
+                "users.csv",
+                b" Username ,Password,Preset\nalice,alice-password-123,learner\n",
+                "text/csv",
+            )
+        },
+        headers=headers["admin"],
+    )
+    assert response.status_code == 200
+    assert response.json()["created_count"] == 1
+    assert response.json()["results"][0]["username"] == "alice"
