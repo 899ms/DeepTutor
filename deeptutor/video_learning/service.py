@@ -283,7 +283,9 @@ def parse_webvtt(text: str) -> list[dict[str, Any]]:
             body_lines.append(line)
             index += 1
 
-        body = clean_transcript_text(re.sub(r"<[^>]+>", "", "\n".join(body_lines)))
+        # Entity decoding belongs to normalize_cues. Parsing and normalizing
+        # the same source must not turn nested &amp;lt; into a literal tag.
+        body = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", "\n".join(body_lines))).strip()
         if body:
             result.append(
                 {
@@ -328,10 +330,11 @@ class TimedMediaStore:
     @staticmethod
     def _repair_transcript_text(material: dict[str, Any]) -> bool:
         """Repair legacy machine-generated captions without touching user content."""
+        if material.get("_caption_text_version") == 1:
+            return False
         transcript = material.get("transcript")
         if not isinstance(transcript, dict):
             return False
-        changed = False
         for key in ("cues", "segments"):
             rows = material.get(key) if key == "segments" else transcript.get(key)
             if not isinstance(rows, list):
@@ -342,8 +345,8 @@ class TimedMediaStore:
                 text = clean_transcript_text(row["text"])
                 if text != row["text"]:
                     row["text"] = text
-                    changed = True
-        return changed
+        material["_caption_text_version"] = 1
+        return True
 
     def get(self, material_id: str, *, lock_held: bool = False) -> dict[str, Any]:
         payload = self._load(material_id)
@@ -672,6 +675,7 @@ async def resolve_material(
         "segments": build_segments(cues),
         "learning": learning,
         "provider_cache": {"invidious_formats": formats} if formats else {},
+        "_caption_text_version": 1,
     }
     with store.lock(material_id):
         # Network resolution happens outside the file lock. Re-read only the
@@ -773,7 +777,11 @@ async def refresh_invidious_transcript(material_id: str) -> dict[str, Any]:
 
 
 def public_material(material: dict[str, Any], *, provider: str) -> dict[str, Any]:
-    payload = {key: value for key, value in material.items() if key != "provider_cache"}
+    payload = {
+        key: value
+        for key, value in material.items()
+        if key not in {"provider_cache", "_caption_text_version"}
+    }
     source = payload.get("source") if isinstance(payload.get("source"), dict) else {}
     learning = payload.get("learning") if isinstance(payload.get("learning"), dict) else {}
     start = float(learning.get("last_position") or source.get("entry_time_seconds") or 0)

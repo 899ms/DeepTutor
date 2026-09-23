@@ -95,9 +95,19 @@ def test_transcript_normalization_decodes_entities_and_normalizes_whitespace() -
     assert cues == [{"start": 0.0, "end": 1.0, "text": "Learn from A & B"}]
 
 
+def test_nested_caption_entities_decode_only_once() -> None:
+    parsed = service.parse_webvtt(
+        "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nUse &amp;lt;tag&amp;gt; literally\n"
+    )
+
+    assert service.normalize_cues(parsed)[0]["text"] == "Use &lt;tag&gt; literally"
+
+
 def test_webvtt_preserves_caption_after_leading_blank_and_inline_tags() -> None:
-    cues = service.parse_webvtt(
-        "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n \nOpening <c>idea</c>&nbsp;&amp;\nand continuation\n"
+    cues = service.normalize_cues(
+        service.parse_webvtt(
+            "WEBVTT\n\n00:00:00.000 --> 00:00:02.000\n \nOpening <c>idea</c>&nbsp;&amp;\nand continuation\n"
+        )
     )
 
     assert cues == [
@@ -155,6 +165,26 @@ def test_store_repairs_legacy_caption_entities(isolated: Path) -> None:
     persisted = json.loads(store._path(material_id).read_text(encoding="utf-8"))
     assert persisted["transcript"]["cues"][0]["text"] == "Learn & apply"
     assert store.get(material_id)["segments"][0]["text"] == "Learn & apply"
+
+
+def test_store_legacy_repair_does_not_decode_nested_entities_twice(isolated: Path) -> None:
+    store = service.TimedMediaStore()
+    material_id = service.material_id_for("dQw4w9WgXcQ")
+    store.save(
+        {
+            "version": 1,
+            "type": "timed_media",
+            "material_id": material_id,
+            "transcript": {
+                "status": "ready",
+                "cues": [{"start": 0, "end": 1, "text": "Use &amp;lt;tag&amp;gt;"}],
+            },
+            "segments": [{"locator": 1, "start": 0, "end": 1, "text": "Use &amp;lt;tag&amp;gt;"}],
+        }
+    )
+
+    assert store.get(material_id)["segments"][0]["text"] == "Use &lt;tag&gt;"
+    assert store.get(material_id)["segments"][0]["text"] == "Use &lt;tag&gt;"
 
 
 def test_invidious_caption_choice_accepts_the_real_snake_case_schema() -> None:
