@@ -4,6 +4,7 @@ import asyncio
 from types import SimpleNamespace
 
 from fastapi import FastAPI
+import pytest
 from starlette.testclient import TestClient
 
 from deeptutor.api.routers import book as book_router
@@ -59,6 +60,31 @@ class _FakeResolvedBook:
 
     def load_progress(self, book_id: str) -> Progress:
         return self.learning.load_progress(book_id)
+
+
+@pytest.mark.parametrize(
+    ("question_type", "correct_answer", "submitted", "expected"),
+    [
+        ("choice", "B", "B", True),
+        ("multiple_choice", "Two", "B", True),
+        ("mcq", "Two", "A", False),
+        ("written", "Two", "B", None),
+    ],
+)
+def test_book_linked_choice_grade_matches_supported_ui_answers(
+    question_type: str, correct_answer: str, submitted: str, expected: bool | None
+) -> None:
+    assert (
+        book_router._verified_choice_grade(
+            {
+                "question_type": question_type,
+                "options": {"A": "One", "B": "Two"},
+                "correct_answer": correct_answer,
+            },
+            submitted,
+        )
+        is expected
+    )
 
 
 def test_quiz_attempt_syncs_focus_check_to_question_bank(tmp_path, monkeypatch) -> None:

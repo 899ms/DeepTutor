@@ -184,15 +184,24 @@ def _focus_check_question(
 
 def _verified_choice_grade(question: dict[str, Any], user_answer: str) -> bool | None:
     """A linked Book answer is trusted only when the stored key can grade it."""
-    if str(question.get("question_type") or "").strip().lower() != "choice":
+    question_type = str(question.get("question_type") or "").strip().lower().replace(" ", "_")
+    if question_type not in {"choice", "multiple_choice", "multiple-choice", "mcq"}:
         return None
     options = question.get("options")
     if not isinstance(options, dict):
         return None
     answer = user_answer.strip().upper()
-    correct = str(question.get("correct_answer") or "").strip().upper()
-    keys = {str(key).strip().upper() for key in options}
-    if answer not in keys or correct not in keys:
+    keys = {str(key).strip().upper(): str(label).strip() for key, label in options.items()}
+    correct_text = str(question.get("correct_answer") or "").strip()
+    correct = correct_text.upper()
+    if correct not in keys:
+        matching = [
+            key for key, label in keys.items() if label.casefold() == correct_text.casefold()
+        ]
+        if len(matching) != 1:
+            return None
+        correct = matching[0]
+    if answer not in keys:
         return None
     return answer == correct
 

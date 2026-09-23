@@ -432,6 +432,11 @@ async def record_assessment(record: AssessmentRecord) -> AssessmentOutcome:
 
         store = get_sqlite_session_store()
         existing_attempt = await store.get_assessment_attempt(attempt_id)
+        if existing_attempt is not None:
+            # An earlier submission may have had an untrusted mapping removed.
+            # Its immutable event owns the linkage on every retry.
+            item["mastery_path_id"] = str(existing_attempt.get("mastery_path_id") or "")
+            item["knowledge_point_id"] = str(existing_attempt.get("knowledge_point_id") or "")
         if (
             existing_attempt is None
             and record.source != "mastery_path"

@@ -881,10 +881,12 @@ function BookPageInner() {
         is_correct: args.isCorrect,
         submission_id: submissionId,
       })
-      pendingQuizSubmissions.current.delete(key)
-      setDetail(current =>
-        current && current.book.id === bookId ? { ...current, progress } : current
-      )
+      if (pendingQuizSubmissions.current.get(key)?.id === submissionId) {
+        pendingQuizSubmissions.current.delete(key)
+        setDetail(current =>
+          current && current.book.id === bookId ? { ...current, progress } : current
+        )
+      }
     })
 
   /**

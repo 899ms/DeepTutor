@@ -249,6 +249,31 @@ def test_old_submission_retry_cannot_overwrite_newer_answer(store: SQLiteSession
     assert len(attempts) == 2
 
 
+def test_late_arriving_older_attempt_does_not_rewind_question_card(
+    store: SQLiteSessionStore,
+) -> None:
+    asyncio.run(store.create_session(title="S", session_id="session-1"))
+    newer = _mastery_record(
+        attempt_id="newer",
+        user_answer="4",
+        result="correct",
+        is_correct=True,
+        created_at=200.0,
+    )
+    older = _mastery_record(
+        attempt_id="older", user_answer="3", result="incorrect", created_at=100.0
+    )
+    asyncio.run(record_assessment(newer))
+    outcome = asyncio.run(record_assessment(older))
+
+    latest = asyncio.run(store.find_notebook_entry("session-1", "q-1", turn_id="turn-1"))
+    attempts = asyncio.run(store.list_assessment_attempts("session-1", question_id="q-1"))
+    assert outcome.attempt_recorded is True
+    assert outcome.upserted is False
+    assert latest["result"] == "correct"
+    assert [item["attempt_id"] for item in attempts] == ["older", "newer"]
+
+
 def test_submission_id_cannot_be_reused_for_different_answer(store: SQLiteSessionStore) -> None:
     asyncio.run(store.create_session(title="S", session_id="session-1"))
     asyncio.run(record_assessment(_mastery_record(attempt_id="same", user_answer="3")))
@@ -281,9 +306,11 @@ def test_unknown_cross_surface_objective_keeps_unlinked_attempt(store: SQLiteSes
         attempt_id="unlinked",
     )
     outcome = asyncio.run(record_assessment(record))
+    retry = asyncio.run(record_assessment(record))
     latest = asyncio.run(store.find_notebook_entry("session-1", "q-1", turn_id="turn-1"))
     attempts = asyncio.run(store.list_assessment_attempts("session-1", question_id="q-1"))
     assert "dropped_invalid_mastery_linkage" in outcome.diagnostics
+    assert retry.attempt_recorded is False
     assert latest["mastery_path_id"] == ""
     assert attempts[0]["mastery_path_id"] == ""
 

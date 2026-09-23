@@ -3266,6 +3266,17 @@ class SQLiteSessionStore:
                 count = int(row["count"]) + 1
                 item = {**item, "attempt_count": count}
                 attempt = {**attempt, "attempt_count": count}
+            latest = conn.execute(
+                "SELECT occurred_at, attempt_id FROM assessment_attempts "
+                "WHERE origin_type = ? AND origin_ref = ? AND turn_id = ? AND question_id = ? "
+                "ORDER BY occurred_at DESC, attempt_id DESC LIMIT 1",
+                (origin_type, origin_ref, turn_id, question_id),
+            ).fetchone()
+            occurred_at = float(attempt.get("occurred_at") or time.time())
+            is_latest = latest is None or (occurred_at, attempt_id) >= (
+                float(latest["occurred_at"]),
+                str(latest["attempt_id"]),
+            )
             conn.execute(
                 """
                 INSERT INTO assessment_attempts (
@@ -3287,11 +3298,13 @@ class SQLiteSessionStore:
                     str(attempt.get("result") or "ungraded"),
                     str(attempt.get("mastery_path_id") or ""),
                     str(attempt.get("knowledge_point_id") or ""),
-                    float(attempt.get("occurred_at") or time.time()),
+                    occurred_at,
                     _json_dumps(attempt),
                 ),
             )
-            upserted = self._upsert_notebook_entries_in_conn(conn, session_id, [item])
+            upserted = (
+                self._upsert_notebook_entries_in_conn(conn, session_id, [item]) if is_latest else 0
+            )
             row = conn.execute(
                 "SELECT id FROM notebook_entries WHERE origin_type = ? "
                 "AND origin_ref = ? AND turn_id = ? AND question_id = ?",

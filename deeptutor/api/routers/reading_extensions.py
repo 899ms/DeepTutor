@@ -318,7 +318,8 @@ async def submit_quiz_answers(material_id: str, payload: QuizAnswersPayload) -> 
         correct_text = str(choices[correct_index]) if 0 <= correct_index < len(choices) else ""
         submission_id = payload.submission_id.strip()
         attempt_id = (
-            f"reading:{material_id}:{payload.locator}:{item.question_id.strip()}:{submission_id}"
+            f"reading:{origin_type}:{origin_ref}:{turn_id}:"
+            f"{item.question_id.strip()}:{submission_id}"
             if submission_id
             else ""
         )
