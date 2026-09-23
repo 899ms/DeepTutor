@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 
-from .chapter_rebuild import CHAPTER_RE, Chapter, assign_page_ranges
+from .chapter_rebuild import CHAPTER_RE, Chapter, assign_page_ranges, layout_page_count
 
 
 def _block_text(block: dict) -> str:
@@ -82,7 +82,7 @@ def rebuild_from_headers(layout: dict) -> list[Chapter]:
     """
     chapters: list[Chapter] = []
     seen: set[str] = set()
-    page_count = len(layout.get("pdf_info", []))
+    page_count = layout_page_count(layout)
     for page in layout.get("pdf_info", []):
         footers, printed = page_facts(page)
         for title in footers:

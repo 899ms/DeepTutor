@@ -10,7 +10,7 @@ footer path.
 
 from __future__ import annotations
 
-from deeptutor.textbook_struct.chapter_rebuild import rebuild_from_headers_level
+from deeptutor.textbook_struct import rebuild_from_headers_level, verify_offset
 from deeptutor.textbook_struct.page_headers import (
     normalize_header_chapter,
     page_facts,
@@ -104,6 +104,8 @@ def test_rebuild_level_builds_chapters_from_headers() -> None:
         "第2章 一元二次函数、方程和不等式",
     ]
     assert [c.page_idx for c in chapters] == [1, 19]
+    # Ranges are half-open, even when layout pages have sparse indices.
+    assert [c.end_page_idx for c in chapters] == [19, 20]
     assert chapters[0].meta["printed_page"] == 2
     assert chapters[1].meta["printed_page"] == 20
     # Constant offset: physical page − printed page = 1 across the whole book.
@@ -111,8 +113,6 @@ def test_rebuild_level_builds_chapters_from_headers() -> None:
 
 
 def verify_offsets_ok(chapters) -> bool:
-    from deeptutor.textbook_struct.chapter_rebuild import verify_offset
-
     return verify_offset(chapters)["ok"]
 
 

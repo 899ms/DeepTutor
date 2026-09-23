@@ -72,6 +72,12 @@ def merge_adjacent(blocks: list[dict], gap: float = 40.0) -> list[dict]:
     return merged
 
 
+def layout_page_count(layout: dict) -> int:
+    """Exclusive upper page bound, including sparse physical page indices."""
+    pages = layout.get("pdf_info", [])
+    return max([len(pages), *(page["page_idx"] + 1 for page in pages)])
+
+
 def rebuild(
     layout: dict,
     *,
@@ -100,7 +106,7 @@ def rebuild(
                 )
             )
     chapters = _dedupe_keep_last(chapters)  # TOC page duplicates body hits — keep body
-    return assign_page_ranges(chapters, page_count=len(layout.get("pdf_info", [])))
+    return assign_page_ranges(chapters, page_count=layout_page_count(layout))
 
 
 def _dedupe_keep_last(chapters: list[Chapter]) -> list[Chapter]:
@@ -117,12 +123,13 @@ def _dedupe_keep_last(chapters: list[Chapter]) -> list[Chapter]:
 
 
 def assign_page_ranges(chapters: list[Chapter], *, page_count: int) -> list[Chapter]:
-    """Chapter i spans [start_i, start_{i+1}); the last runs to the last page."""
+    """Return half-open page ranges, including the final physical page."""
+    chapters.sort(key=lambda chapter: chapter.page_idx)
     for i, chapter in enumerate(chapters):
         chapter.end_page_idx = (
             chapters[i + 1].page_idx
             if i + 1 < len(chapters)
-            else max(page_count - 1, chapter.page_idx)
+            else max(page_count, chapter.page_idx + 1)
         )
     return chapters
 
@@ -211,7 +218,7 @@ def rebuild_from_headers_level(layout: dict, unit: str = "课") -> list[Chapter]
         raise ValueError(f"unknown unit: {unit}")
     chapters: list[Chapter] = []
     seen: set[str] = set()
-    page_count = len(layout.get("pdf_info", []))
+    page_count = layout_page_count(layout)
     for page in layout.get("pdf_info", []):
         footers, printed = page_facts(page)
         for title in footers:
