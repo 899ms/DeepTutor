@@ -72,12 +72,8 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="caption even if a stored caption already exists (implies --caption)",
     )
-    parser.add_argument(
-        "--limit", type=int, metavar="N", help="process at most N materials"
-    )
-    parser.add_argument(
-        "--yes", action="store_true", help="skip the interactive confirmation"
-    )
+    parser.add_argument("--limit", type=int, metavar="N", help="process at most N materials")
+    parser.add_argument("--yes", action="store_true", help="skip the interactive confirmation")
     return parser
 
 
@@ -158,8 +154,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if not sys.stdin.isatty():
             print(
-                "refusing to run a non-dry refresh without --yes in a "
-                "non-interactive shell",
+                "refusing to run a non-dry refresh without --yes in a non-interactive shell",
                 file=sys.stderr,
             )
             return 2

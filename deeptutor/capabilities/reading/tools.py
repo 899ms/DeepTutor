@@ -421,7 +421,9 @@ class ReadMaterialTool(_ReadingToolBase):
                 for locator in rendered.locators
                 if locator in stamps
             )
-        media_note = await asyncio.to_thread(_media_note, store, material_id, manifest.unit, rendered.locators)
+        media_note = await asyncio.to_thread(
+            _media_note, store, material_id, manifest.unit, rendered.locators
+        )
         followup = (
             "\n\n→ Now call reader_goto with the verbatim sentence you are "
             "about to cite, so the user sees it highlighted, and cite it in "

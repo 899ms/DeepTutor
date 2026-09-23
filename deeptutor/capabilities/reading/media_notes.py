@@ -40,9 +40,7 @@ def _render_image(name: str, caption: str) -> str:
     return f"{name} — {clipped}"
 
 
-def render_media_note(
-    store: Any, material_id: str, unit: str, locators: Sequence[int]
-) -> str:
+def render_media_note(store: Any, material_id: str, unit: str, locators: Sequence[int]) -> str:
     """List the embedded images that live in the units just read.
 
     The reader pane displays these images next to their unit, and the turn

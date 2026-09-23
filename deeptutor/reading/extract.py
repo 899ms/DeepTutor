@@ -231,6 +231,7 @@ def _pdf_pages_with_image_markers(
     )
     return targeted, _media_for_units(targeted, pdf_images.collection.images)
 
+
 def _extract_epub(source: Path) -> Extraction:
     """Preserve EPUB spine order so browser and assistant locators agree."""
     from deeptutor.utils.document_extractor import DocumentExtractionError, extract_epub_spine

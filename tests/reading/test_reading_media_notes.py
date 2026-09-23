@@ -26,7 +26,6 @@ from deeptutor.capabilities.reading.media_notes import (
 )
 from deeptutor.capabilities.reading.tools import _media_note
 from deeptutor.core.context import UnifiedContext
-
 import deeptutor.reading as reading_pkg
 from deeptutor.reading import page_render as page_render_module
 
@@ -74,7 +73,9 @@ def test_media_note_without_captions_is_byte_for_byte_the_legacy_output() -> Non
 
     note = _media_note(_FakeStore(rows), "material", "page", [3, 5])
 
-    assert note == _legacy_note("page", [(3, ["image-01.png", "image-02.png"]), (5, ["image-09.png"])])
+    assert note == _legacy_note(
+        "page", [(3, ["image-01.png", "image-02.png"]), (5, ["image-09.png"])]
+    )
 
 
 def test_media_note_appends_each_caption_after_its_figure() -> None:
@@ -203,9 +204,7 @@ def test_pre_loop_seed_skips_media_work_without_a_locator(monkeypatch, locator) 
 
 def test_pre_loop_seed_announces_a_page_render(monkeypatch) -> None:
     monkeypatch.setattr(reading_pkg, "ReadingStore", lambda: _FakeStore([]))
-    monkeypatch.setattr(
-        page_render_module, "page_has_render", lambda material_id, locator: True
-    )
+    monkeypatch.setattr(page_render_module, "page_has_render", lambda material_id, locator: True)
 
     seed = ReadingCapability().pre_loop_seed(_viewport_context(14))
 
@@ -215,9 +214,7 @@ def test_pre_loop_seed_announces_a_page_render(monkeypatch) -> None:
 
 def test_pre_loop_seed_is_byte_for_byte_unchanged_without_a_page_render(monkeypatch) -> None:
     monkeypatch.setattr(reading_pkg, "ReadingStore", lambda: _FakeStore([_row(4, "image-01.png")]))
-    monkeypatch.setattr(
-        page_render_module, "page_has_render", lambda material_id, locator: False
-    )
+    monkeypatch.setattr(page_render_module, "page_has_render", lambda material_id, locator: False)
 
     seed = ReadingCapability().pre_loop_seed(_viewport_context(4))
 

@@ -287,7 +287,12 @@ async def test_registry_detection_and_options_use_grok_protocol(monkeypatch, ins
             return installed, "grok 1.0.3" if installed else "not installed"
         return (
             True,
-            "--single --resume --permission-mode streaming-json" if compatible else "other CLI",
+            (
+                "--output-format streaming-json --single --resume "
+                "--permission-mode --no-memory --verbatim"
+            )
+            if compatible
+            else "other CLI",
         )
 
     monkeypatch.setattr("deeptutor.services.subagent.grok.probe_version", probe)
@@ -300,3 +305,17 @@ async def test_registry_detection_and_options_use_grok_protocol(monkeypatch, ins
     assert options.allow_custom_model and options.models == [] and options.efforts == []
     if not options.available:
         assert "xAI" in options.detail and "grok login" in options.detail
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing_flag", ["--output-format", "--no-memory", "--verbatim"])
+async def test_grok_detection_requires_every_unconditional_flag(monkeypatch, missing_flag):
+    help_text = (
+        "--output-format streaming-json --single --resume --permission-mode --no-memory --verbatim"
+    ).replace(missing_flag, "")
+
+    async def probe(cmd):
+        return True, "grok 1.0.3" if cmd[-1] == "--version" else help_text
+
+    monkeypatch.setattr("deeptutor.services.subagent.grok.probe_version", probe)
+    assert not (await GrokBackend().detect()).available

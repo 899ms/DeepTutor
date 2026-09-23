@@ -65,11 +65,7 @@ async def caption_material_media(
     """
     store = store or ReadingStore()
     rows = store.media_items(material_id)
-    pending = [
-        row
-        for row in rows
-        if force or not str(row.get("caption") or "").strip()
-    ]
+    pending = [row for row in rows if force or not str(row.get("caption") or "").strip()]
     if limit is not None:
         pending = pending[: max(0, int(limit))]
     if not pending:
@@ -81,9 +77,7 @@ async def caption_material_media(
         logger.warning("Image captioning skipped: LLM client is unavailable (%s)", exc)
         return 0
     if not client.supports_multimodal_images():
-        logger.warning(
-            "Image captioning skipped: the configured LLM does not accept image input."
-        )
+        logger.warning("Image captioning skipped: the configured LLM does not accept image input.")
         return 0
 
     concurrency, timeout_seconds = image_description_limits()
@@ -113,9 +107,7 @@ async def caption_material_media(
                     timeout=timeout_seconds,
                 )
         except asyncio.TimeoutError:
-            logger.warning(
-                "Image captioning timed out after %ss: %s", timeout_seconds, name
-            )
+            logger.warning("Image captioning timed out after %ss: %s", timeout_seconds, name)
             return None
         except Exception as exc:  # noqa: BLE001 - one bad image must not sink the rest
             logger.warning("Image captioning failed for %s: %s", name, exc)
@@ -126,9 +118,7 @@ async def caption_material_media(
             return None
         return name, caption
 
-    results = await asyncio.gather(
-        *(_caption_one(row) for row in pending), return_exceptions=True
-    )
+    results = await asyncio.gather(*(_caption_one(row) for row in pending), return_exceptions=True)
     captions: dict[str, str] = {}
     for result in results:
         if isinstance(result, BaseException):
