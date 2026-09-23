@@ -141,3 +141,21 @@ def test_model_switch_prefers_wire_value_and_accepts_model_id(monkeypatch) -> No
         {"profile_id": "alpha", "model_id": "alpha-two"},
         {"profile_id": "alpha", "model_id": "alpha-one"},
     ]
+
+
+def test_picker_can_select_model_id_when_profile_has_duplicate_wire_names(monkeypatch) -> None:
+    config = PartnerConfig(name="Ada")
+    handler, service = _handler(monkeypatch, config=config)
+    catalog = service.load.return_value
+    catalog["services"]["llm"]["profiles"][0]["models"][1]["model"] = "alpha/one"
+    actor = SimpleNamespace(is_admin=True)
+
+    typed = handler.dispatch(_message("/model alpha alpha/one", actor=actor))
+    assert typed is not None and "ambiguous" in typed.content
+
+    picker_message = _message("/model alpha alpha-two", actor=actor)
+    picker_message.metadata["_feishu_model_picker_id"] = "server-owned-picker"
+    selected = handler.dispatch(picker_message)
+
+    assert selected is not None and selected.metadata == {"_feishu_model_switch_success": True}
+    assert config.llm_selection == {"profile_id": "alpha", "model_id": "alpha-two"}

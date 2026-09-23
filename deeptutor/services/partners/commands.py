@@ -339,15 +339,23 @@ class PartnerCommandHandler:
                 choice = options[index]
         elif len(args) == 2:
             profile_options = [row for row in options if row["profile_id"] == args[0]]
-            wire_matches = [row for row in profile_options if row["model"] == args[1]]
-            if len(wire_matches) > 1:
-                return PartnerCommandResult(
-                    "That wire model name is ambiguous. Use its /model number."
-                )
-            if wire_matches:
-                choice = wire_matches[0]
-            else:
+            if msg.channel == "feishu" and (msg.metadata or {}).get("_feishu_model_picker_id"):
+                # The callback selected a server-owned option by its stable ID.
+                # Recheck that ID against today's visible catalog, since wire
+                # names can occur more than once within one profile.
                 choice = next((row for row in profile_options if row["model_id"] == args[1]), None)
+            else:
+                wire_matches = [row for row in profile_options if row["model"] == args[1]]
+                if len(wire_matches) > 1:
+                    return PartnerCommandResult(
+                        "That wire model name is ambiguous. Use its /model number."
+                    )
+                if wire_matches:
+                    choice = wire_matches[0]
+                else:
+                    choice = next(
+                        (row for row in profile_options if row["model_id"] == args[1]), None
+                    )
         if choice is None and not (len(args) == 1 and args[0].isdigit()):
             requested_name = " ".join(args)
             matches = [

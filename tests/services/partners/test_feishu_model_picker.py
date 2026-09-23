@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import Future
 import json
+import threading
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -165,7 +167,7 @@ async def test_runner_carries_picker_result_to_feishu_delivery(monkeypatch, part
     assert "Link this chat" in denied
     assert "_feishu_model_switch_success" not in callback_metadata
 
-    callback = _message("/model profile m1", actor=SimpleNamespace(is_admin=True))
+    callback = _message("/model profile model-1", actor=SimpleNamespace(is_admin=True))
     callback.metadata.update(
         {"_feishu_model_picker_message_id": "om_picker", "_feishu_model_picker_id": "picker"}
     )
@@ -262,7 +264,7 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
     )
     assert "⏳ Switching model" in switching.card.data["elements"][0]["text"]["content"]
     inbound = await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)
-    assert inbound.content == "/model profile m7"
+    assert inbound.content == "/model profile model-7"
     assert inbound.chat_id == "ou_owner"  # callback context has oc_, send target is ou_
     assert inbound.metadata["_feishu_model_picker_message_id"] == "om_picker"
     assert inbound.metadata["_feishu_model_picker_id"] == picker_id
@@ -302,7 +304,7 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
     )
     assert second.card.type == "raw"  # the first switch released the guard
     second_inbound = await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)
-    assert second_inbound.content == "/model second backup-wire"
+    assert second_inbound.content == "/model second model-b"
 
     await channel.send(
         OutboundMessage(
@@ -326,7 +328,7 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
     )
     assert retry.card.type == "raw"
     assert (await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)).content == (
-        "/model second backup-wire"
+        "/model second model-b"
     )
 
 
@@ -369,6 +371,57 @@ async def test_picker_releases_guard_if_callback_cannot_queue_command() -> None:
         return False
 
     assert await guard_released()
+
+
+@pytest.mark.asyncio
+async def test_picker_releases_guard_when_queue_future_already_failed(monkeypatch) -> None:
+    pytest.importorskip("lark_oapi")
+    channel = _channel()
+    channel._loop = asyncio.get_running_loop()
+    channel._send_message_sync = MagicMock(return_value=True)
+    await channel.send(
+        OutboundMessage(
+            channel="feishu",
+            chat_id="ou_owner",
+            content="Available models",
+            metadata={
+                "_feishu_model_options": [
+                    {
+                        "profile_id": "profile",
+                        "model_id": "model-1",
+                        "model_name": "Model 1",
+                        "model": "wire-name",
+                    }
+                ]
+            },
+        )
+    )
+    card = json.loads(channel._send_message_sync.call_args.args[3])
+    picker_id = card["elements"][1]["actions"][0]["value"]["picker_id"]
+
+    def already_failed(coro, _loop):
+        coro.close()
+        future = Future()
+        future.set_exception(RuntimeError("queue failed"))
+        return future
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", already_failed)
+    responses = []
+    worker = threading.Thread(
+        target=lambda: responses.append(
+            channel._on_card_action_sync(
+                _callback(
+                    {"picker_id": picker_id, "action": "select", "provider_index": 0, "index": 0}
+                )
+            )
+        ),
+        daemon=True,
+    )
+    worker.start()
+    worker.join(timeout=1)
+    assert not worker.is_alive(), "a completed queue future must not deadlock the callback"
+    assert responses[0].card.type == "raw"
+    assert channel._model_pickers[picker_id].pending is False
 
 
 @pytest.mark.asyncio

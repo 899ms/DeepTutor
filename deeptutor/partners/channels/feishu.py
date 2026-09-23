@@ -1669,7 +1669,7 @@ class FeishuChannel(BaseChannel):
         command = (
             "/model "
             f"{shlex.quote(str(option['profile_id']))} "
-            f"{shlex.quote(str(option.get('model') or option['model_id']))}"
+            f"{shlex.quote(str(option['model_id']))}"
         )
         await self._handle_message(
             sender_id=sender_id,
@@ -1800,8 +1800,11 @@ class FeishuChannel(BaseChannel):
                         live.pending = False
                         live.pending_index = None
 
-            queued.add_done_callback(release_failed_queue)
-            return card_response(pending_card)
+        # A completed future runs its callback immediately in this thread.
+        # Register it after releasing the picker lock so a fast queue failure
+        # can clear the pending state without deadlocking the card callback.
+        queued.add_done_callback(release_failed_queue)
+        return card_response(pending_card)
 
     async def send(self, msg: OutboundMessage) -> None:
         """Send a message through Feishu, including media (images/files) if present."""
