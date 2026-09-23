@@ -40,7 +40,11 @@ from deeptutor.api.routers.auth import require_admin
 from deeptutor.api.utils.progress_broadcaster import ProgressBroadcaster
 from deeptutor.api.utils.task_id_manager import TaskIDManager
 from deeptutor.api.utils.task_log_stream import capture_task_logs, get_task_stream_manager
-from deeptutor.knowledge.add_documents import DocumentAdder, remove_raw_document
+from deeptutor.knowledge.add_documents import (
+    DocumentAdder,
+    hashes_for_indexed_files,
+    remove_raw_document,
+)
 from deeptutor.knowledge.initializer import KnowledgeBaseInitializer
 from deeptutor.knowledge.kb_types import is_connected_kb, supports_local_raw_files
 from deeptutor.knowledge.manager import KnowledgeBaseManager
@@ -3503,6 +3507,22 @@ async def run_reindex_task(
             # that provider rather than forcing the default pipeline.
             rag_service = RAGService(kb_base_dir=str(base_path), provider=None)
 
+            # Only files represented in the completed index may receive a
+            # duplicate-detection hash. LlamaIndex may skip one malformed file
+            # while successfully indexing its siblings (#1481).
+            requested_files = {str(Path(path).resolve()) for path in file_paths}
+            indexed_files: set[str] | None = None
+            reindexed_hashes: dict[str, str] | None = None
+
+            def remember_indexed_files(paths: list[str]) -> None:
+                nonlocal indexed_files
+                confirmed: set[str] = set()
+                for path in paths:
+                    resolved = str(Path(path).resolve())
+                    if resolved in requested_files:
+                        confirmed.add(resolved)
+                indexed_files = (indexed_files or set()) | confirmed
+
             def _on_progress(batch_num: int, total_batches: int) -> None:
                 progress_tracker.update(
                     ProgressStage.PROCESSING_DOCUMENTS,
@@ -3518,6 +3538,9 @@ async def run_reindex_task(
             # return is reserved for "no documents to index" — surface that
             # specifically too.
             def persist_terminal_state(candidate_root=None):
+                completed_count = (
+                    len(indexed_files) if indexed_files is not None else len(file_paths)
+                )
                 if candidate_root is None:
                     completed_at = datetime.now().isoformat()
                     metadata_file = kb_dir / "metadata.json"
@@ -3530,8 +3553,10 @@ async def run_reindex_task(
                                 metadata = loaded_metadata
                         metadata["last_updated"] = completed_at
                         metadata["last_indexed_at"] = completed_at
-                        metadata["last_indexed_count"] = len(file_paths)
+                        metadata["last_indexed_count"] = completed_count
                         metadata["last_indexed_action"] = "reindex"
+                        if reindexed_hashes is not None:
+                            metadata["file_hashes"] = reindexed_hashes
                         atomic_write_json(metadata_file, metadata)
                     except Exception:
                         raise
@@ -3541,7 +3566,7 @@ async def run_reindex_task(
                     "Re-index complete",
                     current=len(file_paths),
                     total=len(file_paths),
-                    indexed_count=len(file_paths),
+                    indexed_count=completed_count,
                     index_changed=True,
                     index_action="reindex",
                     publication_version=candidate_root.name if candidate_root else None,
@@ -3559,7 +3584,7 @@ async def run_reindex_task(
                     "progress_percent": 100,
                     "current": len(file_paths),
                     "total": len(file_paths),
-                    "indexed_count": len(file_paths),
+                    "indexed_count": completed_count,
                     "index_changed": True,
                     "index_action": "reindex",
                 }
@@ -3599,6 +3624,7 @@ async def run_reindex_task(
                 file_paths=file_paths,
                 progress_callback=_on_progress,
                 indexing_snapshot=indexing_snapshot,
+                indexed_file_callback=remember_indexed_files,
                 before_publish=persist_terminal_state
                 if signature_hash == LIGHTRAG_PROVIDER
                 else None,
@@ -3615,7 +3641,19 @@ async def run_reindex_task(
                 raise RuntimeError(f"Re-index found no valid documents to index in '{kb_name}'.")
             index_published = signature_hash == LIGHTRAG_PROVIDER
 
+            if indexed_files is not None:
+                reindexed_hashes = await asyncio.to_thread(
+                    hashes_for_indexed_files, sorted(indexed_files), raw_dir
+                )
+
             persist_terminal_state()
+
+            if indexed_files is not None and len(indexed_files) < len(file_paths):
+                _task_log(
+                    task_id,
+                    f"Re-index skipped {len(file_paths) - len(indexed_files)} file(s); see parser logs.",
+                    level="warning",
+                )
 
             _task_log(task_id, f"Re-index of '{kb_name}' complete", level="success")
             task_manager.update_task_status(task_id, "completed")
