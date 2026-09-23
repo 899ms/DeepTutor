@@ -14,7 +14,6 @@ from deeptutor.capabilities.audio_overview.request_config import AudioOverviewRe
 from deeptutor.core.capability_protocol import CapabilityManifest, StreamBusProtocol, TurnCapability
 from deeptutor.core.context import UnifiedContext
 from deeptutor.i18n import StatusI18n
-from deeptutor.runtime.agentic.usage import UsageTracker
 from deeptutor.runtime.request_contracts import get_capability_request_schema
 
 
@@ -62,7 +61,6 @@ class AudioOverviewCapability(TurnCapability):
             self.name,
             language=context.language,
         )
-        usage = UsageTracker()
         pipeline = AudioOverviewPipeline(
             language=context.language,
             system_prompt=str(prompts.get("system") or ""),
@@ -127,7 +125,6 @@ class AudioOverviewCapability(TurnCapability):
                 "workspace_items": artifacts.workspace_items,
             },
             source=self.name,
-            usage=usage,
         )
 
 
