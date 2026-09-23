@@ -67,14 +67,10 @@ type EpubRendition = {
     };
   };
   themes: {
-    register: (
-      name: string,
-      rules: Record<string, Record<string, string>>,
-    ) => void;
+    registerCss: (name: string, css: string) => void;
     select: (name: string) => void;
     fontSize: (size: string) => void;
     override: (name: string, value: string, priority?: boolean) => void;
-    removeOverride: (name: string) => void;
   };
 };
 
@@ -110,14 +106,29 @@ function applyEpubDisplayPreferences(
   rendition: EpubRendition,
   preferences: ReaderDisplayPreferences,
 ) {
-  rendition.themes.fontSize(`${preferences.fontSize}px`);
-  rendition.themes.override(
-    "font-family",
-    preferences.serif
-      ? "ui-serif, Georgia, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif"
-      : "ui-sans-serif, system-ui, -apple-system, 'PingFang SC', sans-serif",
-    true,
+  const fontFamily = preferences.serif
+    ? "ui-serif, Georgia, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif"
+    : "ui-sans-serif, system-ui, -apple-system, 'PingFang SC', sans-serif";
+  const paper =
+    preferences.readerTheme === "sepia"
+      ? { background: "#f4ecd8", color: "#473c2c" }
+      : preferences.readerTheme === "night"
+        ? { background: "#16181d", color: "#e8e5df" }
+        : null;
+
+  // The theme stylesheet is replaced on each preference change. EPUB
+  // publishers often set font and ink directly on paragraphs or spans; a
+  // body-only epub.js override cannot beat those declarations (#1447).
+  rendition.themes.registerCss(
+    "deeptutor",
+    `body { font-family: ${fontFamily} !important; font-size: ${preferences.fontSize}px !important; ${paper ? `background-color: ${paper.background} !important; color: ${paper.color} !important;` : ""} }
+     body :is(p, span, div, li, blockquote) { font-family: ${fontFamily} !important; font-size: inherit !important; ${paper ? `color: ${paper.color} !important;` : ""} }
+     body :is(h1, h2, h3, h4, h5, h6) { font-family: ${fontFamily} !important; ${paper ? `color: ${paper.color} !important;` : ""} }
+     body * { vertical-align: baseline; }
+     img { max-width: 100% !important; max-height: 85vh !important; height: auto !important; object-fit: contain !important; }`,
   );
+  rendition.themes.select("deeptutor");
+  rendition.themes.fontSize(`${preferences.fontSize}px`);
   // epub.js sets column-width but leaves column-count automatic. A wide pane
   // can fit a third visible column after the sidebar collapses (#1447).
   rendition.themes.override(
@@ -125,19 +136,6 @@ function applyEpubDisplayPreferences(
     preferences.spreadMode === "none" ? "1" : "2",
     true,
   );
-  const paper =
-    preferences.readerTheme === "sepia"
-      ? { background: "#f4ecd8", color: "#473c2c" }
-      : preferences.readerTheme === "night"
-        ? { background: "#16181d", color: "#e8e5df" }
-        : null;
-  if (paper) {
-    rendition.themes.override("background-color", paper.background, true);
-    rendition.themes.override("color", paper.color, true);
-  } else {
-    rendition.themes.removeOverride("background-color");
-    rendition.themes.removeOverride("color");
-  }
 }
 
 export interface EpubDocumentViewProps {
@@ -436,16 +434,6 @@ export function EpubDocumentView({
         });
         renditionRef.current = rendition;
         activeSpreadRef.current = preferencesRef.current.spreadMode;
-        rendition.themes.register("deeptutor", {
-          "body *": { "vertical-align": "baseline" },
-          img: {
-            "max-width": "100%",
-            "max-height": "85vh",
-            height: "auto",
-            "object-fit": "contain",
-          },
-        });
-        rendition.themes.select("deeptutor");
         applyEpubDisplayPreferences(rendition, preferencesRef.current);
         rendition.on("relocated", onRelocated);
         rendition.on("selected", onSelected);
@@ -484,6 +472,8 @@ export function EpubDocumentView({
       cancelled = true;
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       if (relayoutTimerRef.current) clearTimeout(relayoutTimerRef.current);
+      relayoutTimerRef.current = null;
+      relayoutAnchorRef.current = undefined;
       if (rendition) {
         rendition.off("relocated", onRelocated);
         rendition.off("selected", onSelected);
