@@ -391,12 +391,7 @@ def _extract_pdf(data: bytes, filename: str) -> str:
                         build_marker(pdf_images.collection.images[index]) for index in indices
                     ]
                 pages = [
-                    page_text
-                    + (
-                        "\n" + "\n".join(marker_by_page[i])
-                        if i in marker_by_page
-                        else ""
-                    )
+                    page_text + ("\n" + "\n".join(marker_by_page[i]) if i in marker_by_page else "")
                     for i, page_text in enumerate(pages, 1)
                 ]
                 note = pdf_images.collection.summary_note()
@@ -1394,9 +1389,7 @@ def extract_documents_from_records(
                     "base64": base64.b64encode(image.data).decode("ascii"),
                     "filename": f"{stem}-图{image_index_from_name(image.name)}{ext}",
                     "mime_type": image.mime_type,
-                    "id": f"{doc_id}-e{image_index_from_name(image.name):02d}"
-                    if doc_id
-                    else "",
+                    "id": f"{doc_id}-e{image_index_from_name(image.name):02d}" if doc_id else "",
                     "embedded": True,
                 }
             )
