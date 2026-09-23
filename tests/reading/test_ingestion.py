@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -168,6 +169,59 @@ def test_revision_migration_reanchors_reliable_quote(stores) -> None:
     position_selector = next(s for s in migrated.selectors if isinstance(s, TextPositionSelector))
     unit_text = reading.unit_text(material_id, migrated.locator)
     assert unit_text[position_selector.start : position_selector.end] == quote_selector.exact
+
+
+def test_revision_migration_checks_each_material_annotation_file(stores) -> None:
+    reading, _catalog = stores
+    material_id = "abcdef0123456789"
+    reading.ingest_units(
+        material_id,
+        filename="article.md",
+        units=["The quick brown fox jumps. A second claim stays here."],
+        source_type="url_snapshot",
+    )
+    reading.save_annotation(
+        material_id,
+        Annotation(
+            annotation_id="first",
+            locator=1,
+            quote="quick brown fox",
+            selectors=(TextQuoteSelector(exact="quick brown fox"),),
+        ),
+    )
+    second_path = reading._dir(material_id) / "annotations" / "another-material.json"
+    second_path.write_text(
+        json.dumps(
+            [
+                Annotation(
+                    annotation_id="second",
+                    locator=1,
+                    quote="second claim",
+                    selectors=(TextQuoteSelector(exact="second claim"),),
+                ).to_dict(),
+                Annotation(
+                    annotation_id="position-only",
+                    locator=1,
+                    selectors=(TextPositionSelector(start=5, end=10),),
+                ).to_dict(),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    reading.ingest_units(
+        material_id,
+        filename="article-v2.md",
+        units=["An introduction. The quick brown fox jumps. A second claim stays here."],
+        source_type="url_snapshot",
+    )
+
+    assert reading.annotations(material_id)[0].material_revision == 2
+    second_rows = [Annotation.from_dict(row) for row in json.loads(second_path.read_text())]
+    assert second_rows[0].material_revision == 2
+    assert second_rows[0].resolution == "resolved"
+    assert second_rows[1].material_revision == 1
+    assert second_rows[1].resolution == "unresolved"
 
 
 def test_revision_migration_marks_gone_quote_unresolved(stores) -> None:
@@ -457,10 +511,10 @@ async def test_youtube_ingestion_uses_configured_invidious_captions(
 
 
 @pytest.mark.asyncio
-async def test_youtube_ingestion_reports_invidious_provider_failure(
+async def test_youtube_ingestion_keeps_playback_when_invidious_provider_fails(
     stores, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _reading, catalog = stores
+    reading, catalog = stores
     monkeypatch.setattr(
         video_learning_service,
         "load_video_learning_settings",
@@ -476,13 +530,14 @@ async def test_youtube_ingestion_reports_invidious_provider_failure(
         raise video_learning_service.TimedMediaError("Invidious request failed with HTTP 503.")
 
     monkeypatch.setattr(video_learning_service, "_invidious_metadata", metadata)
-    service = ReadingIngestionService(_reading, catalog)
+    service = ReadingIngestionService(reading, catalog)
     queued = service.queue_url("https://youtu.be/abc123xyz00")
-    failed = await service.process_url(queued.material_id)
+    ready = await service.process_url(queued.material_id)
 
-    assert failed.status is IngestionStatus.FAILED
-    assert failed.error_code == "youtube_transcript_failed"
-    assert "HTTP 503" in failed.error_detail
+    assert ready.status is IngestionStatus.READY
+    assert ready.cover_url.endswith("hqdefault.jpg")
+    assert reading.manifest(ready.material_id).extractor == "youtube-no-captions"
+    assert reading.unit_text(ready.material_id, 1) == TRANSCRIPT_UNAVAILABLE_TEXT
 
 
 @pytest.mark.parametrize(

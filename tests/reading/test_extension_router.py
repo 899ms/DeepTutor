@@ -89,6 +89,24 @@ def test_action_receives_only_server_verified_visible_text(material, monkeypatch
     assert "visible_text" not in records.activities[0].model_dump()
 
 
+def test_action_succeeds_when_activity_store_fails(material, monkeypatch):
+    def fail_activity(*_args, **_kwargs):
+        raise OSError("activity database unavailable")
+
+    monkeypatch.setattr(reading_extensions, "_record_reading_activity", fail_activity)
+    client = _client(
+        monkeypatch,
+        _extension(lambda *_: ReadingExtensionResult(type="card", payload={"body": "ok"})),
+    )
+
+    response = client.post(
+        f"/api/reading/materials/{material.material_id}/extensions/sample/actions/open",
+        json={"locator": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["payload"]["body"] == "ok"
+
+
 def test_source_anchor_is_loaded_from_server_position(material, monkeypatch):
     ReadingStore().save_position(
         material.material_id,

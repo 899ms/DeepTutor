@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { apiFetch } from "@/lib/api";
 import {
   getReadingPosition,
-  rawMaterialUrl,
+  renderMaterialUrl,
   saveReadingPosition,
   type AnnotationItem,
   type UnitReference,
@@ -315,7 +315,7 @@ export function EpubDocumentView({
         setLoadError("");
         const [module, response, position] = await Promise.all([
           import("epubjs"),
-          apiFetch(rawMaterialUrl(materialId), { cache: "no-store" }),
+          apiFetch(renderMaterialUrl(materialId), { cache: "no-store" }),
           getReadingPosition(materialId).catch(() => null),
         ]);
         if (!response.ok) throw new Error(t("Could not load this section."));

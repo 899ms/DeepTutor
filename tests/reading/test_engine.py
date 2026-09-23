@@ -284,10 +284,13 @@ def test_epub_store_normalizes_finder_packages_for_browser_readers(
     manifest = store.ingest(path)
 
     raw = store.raw_path(manifest.material_id)
-    assert raw is not None
-    normalized = raw.read_bytes()
-    assert manifest.byte_size == len(normalized)
-    assert manifest.source_hash == content_hash(normalized)
+    render = store.render_path(manifest.material_id)
+    assert raw is not None and render is not None
+    assert raw.read_bytes() == path.read_bytes()
+    normalized = render.read_bytes()
+    assert manifest.byte_size == len(path.read_bytes())
+    assert manifest.source_hash == content_hash(path.read_bytes())
+    assert store.ingest(path).material_id == manifest.material_id
     assert [ref.source_href for ref in store.unit_references(manifest.material_id)] == [
         "OEBPS/chapters/one.xhtml",
         "OEBPS/chapters/two.xhtml",

@@ -237,14 +237,17 @@ async def run_extension_action(
             worker.add_done_callback(_discard_late_worker_result)
         registry.finish_action(extension_id)
 
-    await asyncio.to_thread(
-        _record_reading_activity,
-        material_id,
-        extension_id=extension_id,
-        action=action,
-        locator=payload.locator,
-        result_type=result.type,
-    )
+    try:
+        await asyncio.to_thread(
+            _record_reading_activity,
+            material_id,
+            extension_id=extension_id,
+            action=action,
+            locator=payload.locator,
+            result_type=result.type,
+        )
+    except Exception:
+        logger.exception("Reading action succeeded, but learning activity recording failed")
     return dumped
 
 

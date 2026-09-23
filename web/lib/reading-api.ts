@@ -408,6 +408,10 @@ export function rawMaterialUrl(materialId: string): string {
   return apiUrl(`${BASE}/materials/${materialId}/raw`);
 }
 
+export function renderMaterialUrl(materialId: string): string {
+  return apiUrl(`${BASE}/materials/${materialId}/render`);
+}
+
 export async function getReadingPosition(
   materialId: string,
 ): Promise<ReadingPosition> {

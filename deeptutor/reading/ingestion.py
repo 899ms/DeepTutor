@@ -21,6 +21,8 @@ import tempfile
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
+import httpx
+
 from deeptutor.reading.catalog_models import (
     IngestionStatus,
     MaterialRecord,
@@ -797,11 +799,18 @@ def build_transcript_segments(cues: Sequence[TranscriptSegment]) -> list[Transcr
 async def _load_youtube_captions(
     url: str, languages: Sequence[str]
 ) -> tuple[str, str, list[TranscriptSegment]]:
-    from deeptutor.video_learning.service import resolve_youtube_captions
+    from deeptutor.video_learning.service import TimedMediaError, resolve_youtube_captions
 
-    resolution = await resolve_youtube_captions(url, list(languages))
-    metadata = resolution.metadata
     video_id = parse_youtube_url(url).video_id
+    try:
+        resolution = await resolve_youtube_captions(url, list(languages))
+    except (TimedMediaError, httpx.HTTPError) as exc:
+        # Caption metadata is optional for native playback. A configured
+        # provider outage must not turn an otherwise playable link into a
+        # failed reading material.
+        logger.warning("YouTube captions unavailable for %s: %s", video_id, exc)
+        return "YouTube video", f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg", []
+    metadata = resolution.metadata
     segments = build_transcript_segments(normalize_transcript_segments(resolution.cues))
     title = str(metadata.get("title") or "YouTube video")
     cover = str(metadata.get("thumbnail_url") or f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg")

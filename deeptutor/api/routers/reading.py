@@ -1178,11 +1178,21 @@ async def get_revision_unit(material_id: str, revision: int, locator: int) -> Un
 @router.get("/materials/{material_id}/raw")
 async def get_raw(material_id: str) -> FileResponse:
     """The original bytes, for the faithful viewer. Serves Range requests."""
+    return _material_file_response(material_id, browser_ready=False)
+
+
+@router.get("/materials/{material_id}/render")
+async def get_render(material_id: str) -> FileResponse:
+    """Serve a browser-ready EPUB archive, or the original for other formats."""
+    return _material_file_response(material_id, browser_ready=True)
+
+
+def _material_file_response(material_id: str, *, browser_ready: bool) -> FileResponse:
     store = _store()
     try:
         assert_learning_material(material_id)
         manifest = store.manifest(material_id)
-        path = store.raw_path(material_id)
+        path = store.render_path(material_id) if browser_ready else store.raw_path(material_id)
     except Exception as exc:
         raise _http_error(exc) from exc
     if path is None or not path.is_file():
@@ -1262,12 +1272,15 @@ async def save_position(material_id: str, payload: PositionPayload) -> PositionI
                 percentage=payload.percentage,
             ),
         )
-        await asyncio.to_thread(
-            _record_reading_position,
-            material_id,
-            locator=saved.locator,
-            percentage=saved.percentage,
-        )
+        try:
+            await asyncio.to_thread(
+                _record_reading_position,
+                material_id,
+                locator=saved.locator,
+                percentage=saved.percentage,
+            )
+        except Exception:
+            logger.exception("Reading position saved, but learning activity recording failed")
         return PositionInfo(**saved.to_dict())
     except Exception as exc:
         raise _http_error(exc) from exc

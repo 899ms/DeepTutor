@@ -388,17 +388,38 @@ def test_saved_reading_position_updates_account_learning_record(client: TestClie
     assert "source_anchor" not in progress.model_dump()
 
 
-def test_epub_raw_response_is_normalized_for_browser_readers(client: TestClient) -> None:
+def test_position_save_succeeds_when_activity_store_fails(client, monkeypatch) -> None:
+    material = _upload(client)
+
+    def fail_activity(*_args, **_kwargs):
+        raise OSError("activity database unavailable")
+
+    monkeypatch.setattr(reading, "_record_reading_position", fail_activity)
+    response = client.put(
+        f"/api/reading/materials/{material['material_id']}/position",
+        json={"locator": 2, "percentage": 0.6},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["locator"] == 2
+    assert ReadingStore().position(material["material_id"]).locator == 2
+
+
+def test_epub_render_response_is_normalized_and_raw_preserves_upload(client: TestClient) -> None:
+    uploaded = _epub_bytes(finder_package=True)
     material = _upload(
         client,
         name="finder-book.epub",
-        data=_epub_bytes(finder_package=True),
+        data=uploaded,
     )
 
     raw = client.get(f"/api/reading/materials/{material['material_id']}/raw")
+    render = client.get(f"/api/reading/materials/{material['material_id']}/render")
 
     assert raw.status_code == 200
-    with zipfile.ZipFile(io.BytesIO(raw.content)) as archive:
+    assert raw.content == uploaded
+    assert render.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(render.content)) as archive:
         infos = archive.infolist()
         assert archive.read("mimetype") == b"application/epub+zip"
     assert infos[0].filename == "mimetype"
