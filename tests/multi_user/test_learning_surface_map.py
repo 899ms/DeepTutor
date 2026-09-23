@@ -185,9 +185,12 @@ def test_put_restrictions_flips_standard_preset_to_learner(
 
     original_set_preset = multi_user.set_preset
 
-    def set_preset_after_grant(username: str, preset: str) -> bool:
+    def set_preset_after_grant(
+        username: str, preset: str, *, expected_user_id: str | None = None
+    ) -> bool:
         assert load_grant(learner_user_id)["learning_policy"]["age_band"] == "13-15"
-        return original_set_preset(username, preset)
+        assert expected_user_id == learner_user_id
+        return original_set_preset(username, preset, expected_user_id=expected_user_id)
 
     monkeypatch.setattr(multi_user, "set_preset", set_preset_after_grant)
 
@@ -223,7 +226,7 @@ def test_failed_grant_save_does_not_change_standard_preset(
     def fail_save_grant(*_args, **_kwargs):
         raise ValueError("Grant store unavailable")
 
-    monkeypatch.setattr(multi_user, "save_grant", fail_save_grant)
+    monkeypatch.setattr(multi_user, "save_grant_with_receipt", fail_save_grant)
     with pytest.raises(HTTPException, match="Grant store unavailable"):
         asyncio.run(
             multi_user.put_guardian_restrictions(
@@ -234,6 +237,46 @@ def test_failed_grant_save_does_not_change_standard_preset(
     _username, updated = get_user_by_id(learner_user_id)
     assert updated.get("preset") == "standard"
     assert load_grant(learner_user_id).get("learning_policy") is None
+
+
+def test_failed_grant_io_reports_error_without_preset_change(
+    mu_isolated_root, seed_user, monkeypatch
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from deeptutor.api.routers import multi_user
+    from deeptutor.multi_user import grants
+    from deeptutor.multi_user.identity import get_user_by_id
+
+    seed_user("bootstrap-admin")
+    record = seed_user("student-standard")
+    learner_user_id = record["id"]
+    payload = multi_user.GuardianRestrictionsPayload(
+        age_band="13-15",
+        allow_upload=True,
+        allowed_surfaces=["chat", "reading"],
+        extensions=[],
+    )
+
+    def fail_write(_path, _text):
+        raise OSError("grant storage unavailable")
+
+    monkeypatch.setattr(grants, "atomic_write_text", fail_write)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            multi_user.put_guardian_restrictions(
+                learner_user_id, payload, SimpleNamespace(user_id="u_admin", role="admin")
+            )
+        )
+
+    assert error.value.status_code == 500
+    assert error.value.detail == "Learner grant could not be saved"
+    _username, updated = get_user_by_id(learner_user_id)
+    assert updated["preset"] == "standard"
+    assert not grants.grant_path(learner_user_id).exists()
 
 
 @pytest.mark.parametrize(
@@ -271,7 +314,10 @@ def test_failed_preset_update_restores_previous_grant(
         extensions=[],
     )
 
-    def fail_set_preset(_username: str, _preset: str) -> bool:
+    def fail_set_preset(
+        _username: str, _preset: str, *, expected_user_id: str | None = None
+    ) -> bool:
+        assert expected_user_id == learner_user_id
         assert load_grant(learner_user_id)["learning_policy"]["age_band"] == "13-15"
         if preset_failure == "raises":
             raise OSError("users file is unavailable")
@@ -295,3 +341,117 @@ def test_failed_preset_update_restores_previous_grant(
         assert not path.exists()
     else:
         assert path.read_text(encoding="utf-8") == previous_grant_text
+
+
+@pytest.mark.parametrize("newer_age_band", ["6-8", "13-15"])
+def test_preset_failure_keeps_a_later_grant_write(
+    mu_isolated_root, seed_user, monkeypatch, newer_age_band: str
+) -> None:
+    import asyncio
+    from threading import Thread
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from deeptutor.api.routers import multi_user
+    from deeptutor.multi_user.grants import load_grant, save_grant
+    from deeptutor.multi_user.identity import get_user_by_id
+
+    seed_user("bootstrap-admin")
+    record = seed_user("student-standard")
+    learner_user_id = record["id"]
+    payload = multi_user.GuardianRestrictionsPayload(
+        age_band="13-15",
+        allow_upload=True,
+        allowed_surfaces=["chat", "reading"],
+        extensions=[],
+    )
+    writer_errors: list[Exception] = []
+
+    def write_newer_grant() -> None:
+        try:
+            changed = load_grant(learner_user_id)
+            changed["learning_policy"]["age_band"] = newer_age_band
+            save_grant(learner_user_id, changed)
+        except Exception as exc:
+            writer_errors.append(exc)
+
+    def fail_set_preset(
+        _username: str, _preset: str, *, expected_user_id: str | None = None
+    ) -> bool:
+        assert expected_user_id == learner_user_id
+        writer = Thread(target=write_newer_grant, daemon=True)
+        writer.start()
+        writer.join(timeout=5)
+        assert not writer.is_alive()
+        assert not writer_errors
+        return False
+
+    monkeypatch.setattr(multi_user, "set_preset", fail_set_preset)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            multi_user.put_guardian_restrictions(
+                learner_user_id, payload, SimpleNamespace(user_id="u_admin", role="admin")
+            )
+        )
+
+    assert error.value.status_code == 409
+    assert "later grant change was preserved" in error.value.detail
+    assert load_grant(learner_user_id)["learning_policy"]["age_band"] == newer_age_band
+    _username, updated = get_user_by_id(learner_user_id)
+    assert updated["preset"] == "standard"
+
+
+def test_failed_grant_rollback_reports_storage_error(
+    mu_isolated_root, seed_user, monkeypatch
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from deeptutor.api.routers import multi_user
+    from deeptutor.multi_user import grants
+
+    seed_user("bootstrap-admin")
+    record = seed_user("student-standard")
+    learner_user_id = record["id"]
+    grants.save_grant(learner_user_id, {"enabled_tools": []})
+    payload = multi_user.GuardianRestrictionsPayload(
+        age_band="13-15",
+        allow_upload=True,
+        allowed_surfaces=["chat", "reading"],
+        extensions=[],
+    )
+    original_write = grants.atomic_write_text
+    write_count = 0
+
+    def fail_rollback(path, text):
+        nonlocal write_count
+        write_count += 1
+        if write_count == 2:
+            raise OSError("rollback unavailable")
+        return original_write(path, text)
+
+    monkeypatch.setattr(grants, "atomic_write_text", fail_rollback)
+    monkeypatch.setattr(multi_user, "set_preset", lambda *_args, **_kwargs: False)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            multi_user.put_guardian_restrictions(
+                learner_user_id, payload, SimpleNamespace(user_id="u_admin", role="admin")
+            )
+        )
+
+    assert error.value.status_code == 500
+    assert "could not be restored" in error.value.detail
+    assert write_count == 2
+
+
+def test_set_preset_checks_expected_user_id(mu_isolated_root, seed_user) -> None:
+    from deeptutor.multi_user.identity import get_user_by_id, set_preset
+
+    seed_user("bootstrap-admin")
+    record = seed_user("student-standard")
+    assert set_preset("student-standard", "learner", expected_user_id="different") is False
+    _username, unchanged = get_user_by_id(record["id"])
+    assert unchanged["preset"] == "standard"
