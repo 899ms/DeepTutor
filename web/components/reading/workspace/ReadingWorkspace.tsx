@@ -6,6 +6,7 @@ import { READING_HOME, readingSessionIdFromPath } from "@/lib/learning-routes";
 import { browserStorage } from "@/shared/storage";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import {
   useParams,
   usePathname,
@@ -65,7 +66,6 @@ import {
   type ReadingConversation,
   type ReadingLibraryMaterial,
 } from "@/lib/reading-workspace-api";
-import { MediaReadingStage } from "./MediaReadingStage";
 import { SourceNavigator } from "./SourceNavigator";
 import {
   CompanionWelcome,
@@ -82,10 +82,35 @@ import {
   WorkspaceConfirmDialog,
   WorkspaceValueDialog,
 } from "./dialogs";
-import { AddMaterialsDialog } from "@/components/reading/library/AddMaterialsDialog";
 import { ReadingCompanion } from "./ReadingCompanion";
 import { useReadingWorkspace } from "./useReadingWorkspace";
 import { useReadingLearningMode } from "./useLearningMode";
+
+const MediaReadingStage = dynamic(
+  () => import("./MediaReadingStage").then((module) => module.MediaReadingStage),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center">
+        <Loader2 size={24} className="animate-spin text-[var(--primary)]" />
+      </div>
+    ),
+  },
+);
+const AddMaterialsDialog = dynamic(
+  () =>
+    import("@/components/reading/library/AddMaterialsDialog").then(
+      (module) => module.AddMaterialsDialog,
+    ),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[var(--overlay)]">
+        <Loader2 size={24} className="animate-spin text-[var(--primary)]" />
+      </div>
+    ),
+  },
+);
 
 interface ReaderAskDetail {
   quote?: string;
