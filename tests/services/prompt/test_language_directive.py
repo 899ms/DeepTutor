@@ -52,6 +52,17 @@ def test_chat_renders_the_overridable_directive(language: str, marker: str) -> N
     assert marker in rendered
 
 
+def test_fixed_session_selector_disables_conversational_override() -> None:
+    from deeptutor.agents.loop.prompt_blocks import LoopPromptAssembler, PromptBlock
+
+    assembler = LoopPromptAssembler(prompts={}, language="fr")
+    rendered = assembler.render(
+        [PromptBlock(name="Base", content="body")], allow_user_override=False
+    )
+    assert "Français" in rendered
+    assert "explicitly asks" not in rendered
+
+
 @pytest.mark.parametrize(
     ("language", "label"),
     [("fr", "Français"), ("uk", "Українська")],

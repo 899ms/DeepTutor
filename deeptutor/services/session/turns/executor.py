@@ -914,6 +914,7 @@ class TurnExecutor:
                     "conversation_context_text": conversation_context_text,
                     "history_token_count": history_result.token_count,
                     "history_budget": history_result.budget,
+                    "reply_language_fixed": bool(payload.get("_reply_language_fixed")),
                     "turn_id": turn_id,
                     "question_followup_context": followup_question_context or {},
                     "selection_tutor_context": selection_tutor_context or {},

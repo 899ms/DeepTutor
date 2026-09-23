@@ -211,6 +211,7 @@
   "LLM Configuration": "Налаштування LLM",
   "Configure web search providers": "Налаштувати провайдерів веб-пошуку",
   "Default": "За замовчуванням",
+  "Account default": "Типова мова облікового запису",
   "Test": "Тест",
   "Edit": "Редагувати",
   "Delete": "Видалити",

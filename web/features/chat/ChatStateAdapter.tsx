@@ -16,9 +16,10 @@ import type { ClientCommand } from "@/contracts/generated/turn-protocol";
 import {
   RESPONSE_LANGUAGE_EVENT,
   RESPONSE_LANGUAGE_STORAGE_KEY,
-  normalizeLanguage,
+  isResponseLanguage,
   readStoredChatResponseTimeout,
   readStoredResponseLanguage,
+  resolveResponseLanguage,
   writeStoredActiveSessionId,
 } from "@/context/app-shell-storage";
 import type {
@@ -34,6 +35,7 @@ import {
   deleteMessage,
   updateBranchSelection,
   updateSessionTitle,
+  updateSessionReplyLanguage,
   type MessageTracePage,
   type SessionMessage,
 } from "@/lib/session-api";
@@ -182,6 +184,8 @@ export interface ChatState {
   isStreaming: boolean;
   currentStage: string;
   language: string;
+  /** Explicit conversation choice; null follows the account reply language. */
+  replyLanguageOverride: string | null;
   /** Edit-branching: keyed by stringified parent_message_id (or "null"
    *  for the root). Empty means "default to latest sibling everywhere". */
   selectedBranches: Record<string, number>;
@@ -320,6 +324,7 @@ interface SessionSnapshot {
   personaSelection?: string;
   resourceSelection?: ResourceSelection;
   language?: string;
+  replyLanguageOverride?: string | null;
   selectedBranches?: Record<string, number>;
 }
 
@@ -337,6 +342,7 @@ type Action =
   | { type: "SET_PERSONA_SELECTION"; persona: string }
   | { type: "SET_RESOURCE_SELECTION"; selection: ResourceSelection }
   | { type: "SET_LANGUAGE"; lang: string }
+  | { type: "SET_REPLY_LANGUAGE_OVERRIDE"; key: string; language: string | null }
   | {
       type: "ADD_USER_MSG";
       key: string;
@@ -438,6 +444,7 @@ function createSessionEntry(
     currentStage: "",
     language:
       typeof window === "undefined" ? "en" : readStoredResponseLanguage(),
+    replyLanguageOverride: null,
     status: "idle",
     activeTurnId: null,
     lastSeq: 0,
@@ -623,8 +630,23 @@ function reducer(state: ProviderState, action: Action): ProviderState {
     case "SET_LANGUAGE":
       return updateSelectedSession(state, (session) => ({
         ...session,
-        language: action.lang,
+        language: session.replyLanguageOverride ?? action.lang,
       }));
+    case "SET_REPLY_LANGUAGE_OVERRIDE": {
+      const session = state.sessions[action.key];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [action.key]: {
+            ...session,
+            replyLanguageOverride: action.language,
+            language: action.language ?? readStoredResponseLanguage(),
+          },
+        },
+      };
+    }
     case "ADD_USER_MSG": {
       const session =
         state.sessions[action.key] ?? createSessionEntry(action.key);
@@ -1015,6 +1037,10 @@ function reducer(state: ProviderState, action: Action): ProviderState {
             lastSeq: 0,
             status: action.status || "idle",
             language: action.language ?? existing.language,
+            replyLanguageOverride:
+              action.replyLanguageOverride !== undefined
+                ? action.replyLanguageOverride
+                : existing.replyLanguageOverride,
             selectedBranches:
               action.selectedBranches ?? existing.selectedBranches,
             updatedAt: Date.now(),
@@ -1284,6 +1310,7 @@ interface ChatContextValue {
   setPersonaSelection: (persona: string) => void;
   setResourceSelection: (selection: ResourceSelection) => void;
   setLanguage: (lang: string) => void;
+  setReplyLanguageOverride: (language: string | null) => Promise<void>;
   sendMessage: (
     content: string,
     attachments?: OutgoingAttachment[],
@@ -2127,6 +2154,11 @@ export function ChatStateAdapterProvider({
         session.preferences?.workspace_mode,
         session.preferences?.capability,
       );
+      const replyLanguageOverride = isResponseLanguage(
+        session.preferences?.reply_language_override,
+      )
+        ? session.preferences.reply_language_override
+        : null;
       // A stored `running` is only believable while it is recent — see
       // `resolveLoadedRunStatus`. A turn the backend never got to close out
       // (crash, restart) would otherwise open the conversation into a
@@ -2194,10 +2226,10 @@ export function ChatStateAdapterProvider({
           skills: asStringArray(session.preferences?.skills),
           mcp: asStringArray(session.preferences?.mcp),
         },
-        // Model output language is account-level state. Historical sessions
-        // may have stale persisted preferences, so new turns follow the
-        // current response-language setting rather than their original value.
-        language: readStoredResponseLanguage(),
+        // Historical `preferences.language` is only the last turn's account
+        // default. The dedicated selector is the durable conversation choice.
+        language: replyLanguageOverride ?? readStoredResponseLanguage(),
+        replyLanguageOverride,
         selectedBranches: normalizeSelectedBranches(
           session.preferences?.selected_branches,
         ),
@@ -2235,7 +2267,10 @@ export function ChatStateAdapterProvider({
     if (typeof window === "undefined") return;
 
     const syncLanguage = (language: string | null | undefined) => {
-      dispatch({ type: "SET_LANGUAGE", lang: normalizeLanguage(language) });
+      dispatch({
+        type: "SET_LANGUAGE",
+        lang: resolveResponseLanguage(language, readStoredResponseLanguage()),
+      });
     };
     const onResponseLanguage = (event: Event) => {
       const detail = (event as CustomEvent<{ language?: string }>).detail;
@@ -2357,7 +2392,9 @@ export function ChatStateAdapterProvider({
       const effectiveMasterySessionMode =
         replaySnapshot?.masterySessionMode ?? session.masterySessionMode;
       const effectiveLanguage =
-        replaySnapshot?.language ?? readStoredResponseLanguage();
+        replaySnapshot?.language ??
+        session.replyLanguageOverride ??
+        readStoredResponseLanguage();
       // Persona resolution: replay snapshot wins; then an explicit per-call
       // persona (quiz follow-up surface); then the session-level preference.
       // Always a string — "" means Default / no persona.
@@ -2547,6 +2584,11 @@ export function ChatStateAdapterProvider({
         autoRoute: typeof autoRoute === "boolean" ? autoRoute : null,
         attachments: effectiveAttachments,
         language: effectiveLanguage,
+        // A draft has no session to PATCH yet. Persist its selector with the
+        // first turn; existing sessions use their server-side preference.
+        ...(!session.sessionId && session.replyLanguageOverride
+          ? { replyLanguageOverride: session.replyLanguageOverride }
+          : {}),
         notebookReferences: effectiveNotebookReferences,
         historyReferences: effectiveHistoryReferences,
         questionNotebookReferences: effectiveQuestionNotebookReferences,
@@ -2809,6 +2851,7 @@ export function ChatStateAdapterProvider({
       isStreaming: current.isStreaming,
       currentStage: current.currentStage,
       language: current.language,
+      replyLanguageOverride: current.replyLanguageOverride,
       selectedBranches: current.selectedBranches,
       lastTurnFailed: isFailedTurnVisible(
         current.messages,
@@ -2875,6 +2918,32 @@ export function ChatStateAdapterProvider({
 
   const setLanguage = useCallback((lang: string) => {
     dispatch({ type: "SET_LANGUAGE", lang });
+  }, []);
+
+  const setReplyLanguageOverride = useCallback(async (language: string | null) => {
+    if (language !== null && !isResponseLanguage(language)) {
+      throw new Error("Unsupported reply language");
+    }
+    const currentState = stateRef.current;
+    const key = currentState.selectedKey;
+    if (!key) return;
+    const session = currentState.sessions[key];
+    if (!session) return;
+    if (!session.sessionId) {
+      dispatch({ type: "SET_REPLY_LANGUAGE_OVERRIDE", key, language });
+      return;
+    }
+    const updated = await updateSessionReplyLanguage(
+      session.sessionId,
+      language,
+      session.workspaceId ?? undefined,
+    );
+    const saved = updated.preferences?.reply_language_override;
+    dispatch({
+      type: "SET_REPLY_LANGUAGE_OVERRIDE",
+      key,
+      language: isResponseLanguage(saved) ? saved : null,
+    });
   }, []);
 
   const renameSessionTitle = useCallback(async (title: string) => {
@@ -3048,6 +3117,7 @@ export function ChatStateAdapterProvider({
       setPersonaSelection,
       setResourceSelection,
       setLanguage,
+      setReplyLanguageOverride,
       sendMessage,
       cancelStreamingTurn,
       submitUserReply,
@@ -3079,6 +3149,7 @@ export function ChatStateAdapterProvider({
       setPersonaSelection,
       setResourceSelection,
       setLanguage,
+      setReplyLanguageOverride,
       sendMessage,
       cancelStreamingTurn,
       submitUserReply,

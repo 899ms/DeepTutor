@@ -25,6 +25,7 @@ import {
   useState,
 } from "react";
 import { useChatRouteSession } from "@/features/chat/controllers/useChatRouteSession";
+import { waitForReplyLanguageSave } from "@/features/chat/controllers/reply-language-save";
 
 import {
   GraduationCap,
@@ -70,6 +71,8 @@ import {
   type MessageRequestSnapshot,
 } from "@/features/chat/ChatStateAdapter";
 import { useAppShell } from "@/context/AppShellContext";
+import { readStoredResponseLanguage } from "@/context/app-shell-storage";
+import { RESPONSE_LANGUAGE_OPTIONS } from "@/features/settings/store";
 
 import { WATCHING_ASK_EVENT } from "@/components/watching/WatchingPane";
 import type { FilePreviewSource } from "@/components/chat/preview/previewerFor";
@@ -278,6 +281,7 @@ export default function ChatWorkspace({
     setLLMSelection,
     setPersonaSelection,
     setResourceSelection,
+    setReplyLanguageOverride,
     sendMessage,
     cancelStreamingTurn,
     submitUserReply,
@@ -296,6 +300,25 @@ export default function ChatWorkspace({
   } = useChatStateAdapter();
 
   const entrySessionId = useRef(state.sessionId);
+  const [replyLanguageSavingKey, setReplyLanguageSavingKey] = useState<string | null>(null);
+  const replyLanguageSaveRef = useRef<{ key: string; pending: Promise<void> } | null>(null);
+  const handleReplyLanguageChange = useCallback((value: string) => {
+    const language = value || null;
+    const key = state.sessionKey;
+    const pending = setReplyLanguageOverride(language);
+    replyLanguageSaveRef.current = { key, pending };
+    setReplyLanguageSavingKey(key);
+    void pending
+      .catch((error: unknown) => {
+        notify(error instanceof Error ? error.message : t("Action failed"));
+      })
+      .finally(() => {
+        if (replyLanguageSaveRef.current?.pending === pending) {
+          replyLanguageSaveRef.current = null;
+          setReplyLanguageSavingKey(null);
+        }
+      });
+  }, [setReplyLanguageOverride, state.sessionKey, t]);
 
   const resourceReuse = useResourceReusePolicy(state.sessionKey || "draft", state.messages[0]?.id);
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([]);
@@ -1865,6 +1888,15 @@ export default function ChatWorkspace({
 
   const handleSend = useCallback(
     async (content: string) => {
+      // An existing session saves its selector before the next turn starts.
+      // The composer may be used immediately after changing the dropdown.
+      if (!(await waitForReplyLanguageSave(
+        replyLanguageSaveRef.current?.key === state.sessionKey
+          ? replyLanguageSaveRef.current.pending
+          : null,
+        content,
+        (draft) => prefillInputRef.current?.(draft),
+      ))) return;
       // A turn paused on a question: what the user typed is their answer, not
       // a new message. Routing it here means the card is one way to answer,
       // not the only one — and a card that never rendered no longer strands
@@ -2044,6 +2076,7 @@ export default function ChatWorkspace({
       sendMessage,
       shouldAutoScrollRef,
       state.isStreaming,
+      state.sessionKey,
       subagentBudget,
       selectedPartnerGroup,
       selectedPartner,
@@ -2473,6 +2506,27 @@ export default function ChatWorkspace({
                   </span>
                 ) : null}
               </div>
+              <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+                <span className="hidden sm:inline">{t("Reply language")}</span>
+                <select
+                  aria-label={t("Reply language")}
+                  value={state.replyLanguageOverride ?? ""}
+                  onChange={(event) => handleReplyLanguageChange(event.target.value)}
+                  disabled={replyLanguageSavingKey === state.sessionKey || state.isStreaming}
+                  className="max-w-[170px] rounded-lg border border-[var(--border)] bg-[var(--background)] px-2 py-1 text-[11px] text-[var(--foreground)] outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:opacity-50"
+                >
+                  <option value="">
+                    {t("Account default")} ({RESPONSE_LANGUAGE_OPTIONS.find(
+                      (option) => option.value === readStoredResponseLanguage(),
+                    )?.label ?? "English"})
+                  </option>
+                  {RESPONSE_LANGUAGE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <div className="flex shrink-0 items-center gap-0.5">
                 <HeaderActionButton
                   onClick={() => setShowSaveModal(true)}

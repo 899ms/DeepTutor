@@ -43,6 +43,11 @@ const SUPPORTED_RESPONSE_LANGUAGE_CODES: readonly ResponseLanguage[] = [
   "uk",
 ];
 
+export function isResponseLanguage(value: unknown): value is ResponseLanguage {
+  return typeof value === "string" &&
+    (SUPPORTED_RESPONSE_LANGUAGE_CODES as readonly string[]).includes(value);
+}
+
 const RESPONSE_LANGUAGE_ALIASES: Record<string, ResponseLanguage> = {
   "simplified chinese": "zh",
   "traditional chinese": "zh-tw",

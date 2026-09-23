@@ -8742,6 +8742,26 @@
         "title": "SessionRenameRequest",
         "type": "object"
       },
+      "SessionReplyLanguageRequest": {
+        "properties": {
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "required": [
+          "language"
+        ],
+        "title": "SessionReplyLanguageRequest",
+        "type": "object"
+      },
       "SessionSummary": {
         "additionalProperties": false,
         "properties": {
@@ -10308,6 +10328,18 @@
             ],
             "default": null,
             "title": "Regenerated From Message Id"
+          },
+          "reply_language_override": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Reply Language Override"
           },
           "selection_tutor_context": {
             "anyOf": [
@@ -45868,6 +45900,89 @@
           }
         },
         "summary": "Record Quiz Results",
+        "tags": [
+          "sessions"
+        ]
+      }
+    },
+    "/api/sessions/{session_id}/reply-language": {
+      "patch": {
+        "description": "Fix this conversation's reply language, or return to the account default.",
+        "operationId": "update_session_reply_language_api_sessions__session_id__reply_language_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionReplyLanguageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Session Reply Language",
         "tags": [
           "sessions"
         ]

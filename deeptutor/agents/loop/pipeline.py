@@ -455,7 +455,10 @@ class AgenticLoopPipeline:
         stable_blocks, self._runtime_snapshots = self._prompt_assembler.split_for_replay(
             self._last_prompt_blocks
         )
-        return self._prompt_assembler.render(stable_blocks)
+        return self._prompt_assembler.render(
+            stable_blocks,
+            allow_user_override=not bool(context.metadata.get("reply_language_fixed")),
+        )
 
     def _build_loop_messages(
         self,

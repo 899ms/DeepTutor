@@ -7023,6 +7023,26 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/sessions/{session_id}/reply-language": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    /**
+     * Update Session Reply Language
+     * @description Fix this conversation's reply language, or return to the account default.
+     */
+    readonly patch: operations["update_session_reply_language_api_sessions__session_id__reply_language_patch"];
+    readonly trace?: never;
+  };
   readonly "/api/sessions/{session_id}/restore": {
     readonly parameters: {
       readonly query?: never;
@@ -14317,6 +14337,11 @@ export interface components {
       /** Title */
       readonly title: string;
     };
+    /** SessionReplyLanguageRequest */
+    readonly SessionReplyLanguageRequest: {
+      /** Language */
+      readonly language: string | null;
+    };
     /** SessionSummary */
     readonly SessionSummary: {
       /** @default null */
@@ -15036,6 +15061,11 @@ export interface components {
        * @default null
        */
       readonly regenerated_from_message_id: number | string | null;
+      /**
+       * Reply Language Override
+       * @default null
+       */
+      readonly reply_language_override: string | null;
       /**
        * Selection Tutor Context
        * @default null
@@ -16286,6 +16316,8 @@ export type SchemaSessionOrganizationRequest =
   components["schemas"]["SessionOrganizationRequest"];
 export type SchemaSessionRenameRequest =
   components["schemas"]["SessionRenameRequest"];
+export type SchemaSessionReplyLanguageRequest =
+  components["schemas"]["SessionReplyLanguageRequest"];
 export type SchemaSessionSummary = components["schemas"]["SessionSummary"];
 export type SchemaSetRoleRequest = components["schemas"]["SetRoleRequest"];
 export type SchemaSetSessionModeRequest =
@@ -32205,6 +32237,45 @@ export interface operations {
     readonly requestBody: {
       readonly content: {
         readonly "application/json": components["schemas"]["QuizResultsRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly update_session_reply_language_api_sessions__session_id__reply_language_patch: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly session_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["SessionReplyLanguageRequest"];
       };
     };
     readonly responses: {

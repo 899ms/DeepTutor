@@ -172,6 +172,17 @@ class TurnRequestPreparer:
         session = await self.store.ensure_session(payload.get("session_id"))
         preferences = session.get("preferences") or {}
 
+        # A conversation-level choice wins over the account default that the
+        # browser sends on every turn. Only the selector's explicit field may
+        # change or clear this durable override (#1511).
+        if "reply_language_override" in payload:
+            reply_language_override = payload["reply_language_override"]
+        else:
+            reply_language_override = preferences.get("reply_language_override")
+        if reply_language_override:
+            payload["language"] = reply_language_override
+        payload["_reply_language_fixed"] = bool(reply_language_override)
+
         # Freeze the content binding at admission, before scheduling the turn.
         # Existing conversations are moved through the organization endpoint;
         # a stale tab must never move one by sending its cached preference.
@@ -554,6 +565,8 @@ class TurnRequestPreparer:
             "knowledge_bases": list(payload.get("knowledge_bases") or []),
             "language": str(payload.get("language") or "en"),
         }
+        if "reply_language_override" in payload:
+            preference_update["reply_language_override"] = reply_language_override
         if content_workspace_enabled and "workspace_id" not in preferences:
             preference_update["workspace_id"] = content_workspace_id or None
         # Missing legacy chat fields should not manufacture an empty stored

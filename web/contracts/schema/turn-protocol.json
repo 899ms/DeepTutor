@@ -1154,6 +1154,18 @@
           "default": null,
           "title": "Regenerated From Message Id"
         },
+        "reply_language_override": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reply Language Override"
+        },
         "selection_tutor_context": {
           "anyOf": [
             {

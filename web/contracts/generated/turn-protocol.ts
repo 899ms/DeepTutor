@@ -74,6 +74,7 @@ export type Selection = string | null;
 export type ReadingWorkspaceId = string | null;
 export type Regenerate = boolean;
 export type RegeneratedFromMessageId = number | string | null;
+export type ReplyLanguageOverride = string | null;
 export type SelectionTutorContext = {
   [k: string]: unknown;
 } | null;
@@ -308,6 +309,7 @@ export interface StartTurnCommand {
   reading_workspace_id?: ReadingWorkspaceId;
   regenerate?: Regenerate;
   regenerated_from_message_id?: RegeneratedFromMessageId;
+  reply_language_override?: ReplyLanguageOverride;
   selection_tutor_context?: SelectionTutorContext;
   session_id?: SessionId;
   skills?: Skills;

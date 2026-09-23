@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Any, Literal
 import warnings
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from deeptutor.response_languages import validate_reply_language_override
 
 _LEGACY_RUNTIME_CONFIG_KEYS: dict[str, str] = {
     "_persist_user_message": "persist_user_message",
@@ -124,6 +126,9 @@ class TurnRequest(BaseModel):
     tools: list[str] | None = None
     knowledge_bases: list[str] = Field(default_factory=list)
     language: str | None = None
+    # Only an explicit session selector sets this. Omitted means keep the
+    # conversation's override; null returns it to the account default.
+    reply_language_override: str | None = None
     config: dict[str, Any] = Field(default_factory=dict)
 
     notebook_references: list[NotebookReference] = Field(default_factory=list)
@@ -182,6 +187,11 @@ class TurnRequest(BaseModel):
     consult_partner_id: str | None = None
     partner_discussion_group_id: str | None = None
     auto_route: bool | None = None
+
+    @field_validator("reply_language_override")
+    @classmethod
+    def _validate_reply_language_override(cls, value: str | None) -> str | None:
+        return validate_reply_language_override(value)
 
     @model_validator(mode="before")
     @classmethod
