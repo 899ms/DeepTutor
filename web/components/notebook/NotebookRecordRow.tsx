@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
-import Tooltip from "@/components/common/Tooltip";
+import Tooltip from "@/shared/ui/Tooltip";
 import NotebookRecordActions from "@/components/notebook/NotebookRecordActions";
 import { notify } from "@/lib/notifications";
 import type { NotebookRecordItem, NotebookSummary } from "@/lib/notebook-api";

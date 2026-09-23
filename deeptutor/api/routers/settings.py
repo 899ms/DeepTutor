@@ -120,6 +120,9 @@ DEFAULT_UI_SETTINGS = {
     # preference (not catalog); the chat surface also keeps a per-session
     # override on top of this global default.
     "voice_autoplay": False,
+    # When true, TTS verbalizes LaTeX into spoken math. When false, formulas
+    # are unwrapped from $ / $$ only. Default true (matches INTERFACE_DEFAULTS).
+    "voice_math_speak": True,
     # Seconds the chat UI waits for any turn event before declaring the
     # connection timed out. Bumped from 60 → 180 so slow tools (image/video
     # generation) don't trip it; user-adjustable in Settings > Network.
@@ -139,8 +142,8 @@ class SidebarNavOrder(BaseModel):
 
 class UISettings(BaseModel):
     theme: Literal["light", "dark", "glass", "snow"] = "snow"
-    language: Literal["zh", "en"] = "en"
-    response_language: Literal["zh", "en"] = "en"
+    language: Literal["zh", "en", "fr"] = "en"
+    response_language: Literal["zh", "en", "fr"] = "en"
     sidebar_description: Optional[str] = None
     sidebar_nav_order: Optional[SidebarNavOrder] = None
     code_block_theme: Optional[str] = None
@@ -162,8 +165,8 @@ class UISettingsUpdate(BaseModel):
     # for exclude_unset partial merges, but an explicit value is still validated
     # so PUT /ui cannot persist a theme/language the app can't render.
     theme: Literal["light", "dark", "glass", "snow"] | None = None
-    language: Literal["zh", "en"] | None = None
-    response_language: Literal["zh", "en"] | None = None
+    language: Literal["zh", "en", "fr"] | None = None
+    response_language: Literal["zh", "en", "fr"] | None = None
     sidebar_description: str | None = None
     sidebar_nav_order: SidebarNavOrder | None = None
     code_block_theme: str | None = None
@@ -175,6 +178,10 @@ class VoiceAutoplayUpdate(BaseModel):
     voice_autoplay: bool
 
 
+class VoiceMathSpeakUpdate(BaseModel):
+    voice_math_speak: bool
+
+
 class ChatResponseTimeoutUpdate(BaseModel):
     chat_response_timeout: int = Field(ge=CHAT_RESPONSE_TIMEOUT_MIN, le=CHAT_RESPONSE_TIMEOUT_MAX)
 
@@ -184,7 +191,7 @@ class ThemeUpdate(BaseModel):
 
 
 class LanguageUpdate(BaseModel):
-    language: Literal["zh", "en"]
+    language: Literal["zh", "en", "fr"]
 
 
 class SidebarDescriptionUpdate(BaseModel):
@@ -378,6 +385,8 @@ class DocumentParsingUpdate(BaseModel):
 
     engine: Optional[str] = None
     engines: Optional[dict[str, dict]] = None
+    # Toggle for vision-model captions of embedded images (None = keep stored).
+    image_caption: Optional[bool] = None
 
 
 class DocumentParsingTest(BaseModel):
@@ -1141,6 +1150,7 @@ def _document_parsing_payload() -> dict[str, Any]:
     docling_slice = engines.get("docling", {})
     return {
         "engine": full.get("engine"),
+        "image_caption": bool(full.get("image_caption", False)),
         "engines": redacted,
         "available_engines": available,
         "readiness": readiness,
@@ -1232,7 +1242,18 @@ async def update_document_parsing_settings(payload: DocumentParsingUpdate):
         engines[name].update(merged)
 
     new_engine = payload.engine or full.get("engine")
-    service.save_document_parsing({"engine": new_engine, "engines": engines})
+    image_caption = (
+        payload.image_caption
+        if payload.image_caption is not None
+        else bool(full.get("image_caption", False))
+    )
+    service.save_document_parsing(
+        {
+            "engine": new_engine,
+            "image_caption": image_caption,
+            "engines": engines,
+        }
+    )
     return _document_parsing_payload()
 
 
@@ -1891,6 +1912,18 @@ async def update_voice_autoplay(update: VoiceAutoplayUpdate):
     """
     patch_ui_settings(voice_autoplay=update.voice_autoplay)
     return {"voice_autoplay": update.voice_autoplay}
+
+
+@router.put("/voice-math-speak")
+async def update_voice_math_speak(update: VoiceMathSpeakUpdate):
+    """Persist whether TTS verbalizes LaTeX as spoken math.
+
+    A personal UI preference (any authenticated user). The voice router reads
+    this on each synthesis call; chat does not send a per-request override.
+    Dollar-sign delimiters are stripped even when this is off.
+    """
+    patch_ui_settings(voice_math_speak=update.voice_math_speak)
+    return {"voice_math_speak": update.voice_math_speak}
 
 
 @router.put("/chat-response-timeout")

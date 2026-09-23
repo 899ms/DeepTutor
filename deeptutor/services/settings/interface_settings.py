@@ -23,6 +23,9 @@ DEFAULT_UI_SETTINGS: dict[str, Any] = {
     "theme": "snow",
     "language": "en",
     "response_language": "en",
+    # When true, TTS verbalizes LaTeX (fractions, powers, Greek). Dollar
+    # delimiters are stripped either way so the voice never says "dollar".
+    "voice_math_speak": True,
 }
 
 
@@ -58,6 +61,7 @@ def _normalize_language(language: Any, default: str = "en") -> str:
     Normalize language codes:
     - en/english -> en
     - zh/chinese/cn -> zh
+    - fr/french -> fr
     """
     if language is None or language == "":
         language = default
@@ -68,6 +72,8 @@ def _normalize_language(language: Any, default: str = "en") -> str:
             return "en"
         if s in {"zh", "chinese", "cn"}:
             return "zh"
+        if s in {"fr", "french"}:
+            return "fr"
 
     # Fall back to default
     if isinstance(default, str):
