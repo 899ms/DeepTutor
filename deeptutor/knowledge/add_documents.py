@@ -509,19 +509,33 @@ async def _bootstrap_index_from_files(
     raw_dir = kb_dir / "raw"
     metadata_file = kb_dir / "metadata.json"
 
-    success = await rag_service.initialize(kb_name=kb_name, file_paths=source_files)
+    requested = {str(Path(path).resolve()): str(Path(path)) for path in source_files}
+    confirmed: set[str] = set()
+
+    def on_indexed_file(paths: list[str]) -> None:
+        for path in paths:
+            canonical = str(Path(path).resolve())
+            if canonical in requested:
+                confirmed.add(canonical)
+
+    success = await rag_service.initialize(
+        kb_name=kb_name,
+        file_paths=source_files,
+        indexed_file_callback=on_indexed_file,
+    )
     if not success:
         raise RuntimeError(
             f"Failed to initialize index for KB '{kb_name}' from {len(source_files)} file(s)"
         )
 
-    indexed = len(source_files)
+    indexed_files = [requested[path] for path in sorted(confirmed)]
+    indexed = len(indexed_files)
     provider = rag_service._resolve_provider(kb_name)
     try:
         # Record hashes so future syncs detect unchanged files.
         metadata = _read_metadata(metadata_file)
         metadata.setdefault("file_hashes", {}).update(
-            hashes_for_indexed_files(source_files, raw_dir)
+            hashes_for_indexed_files(indexed_files, raw_dir)
         )
         metadata["rag_provider"] = provider
         metadata["needs_reindex"] = False
