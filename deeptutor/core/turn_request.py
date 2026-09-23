@@ -7,7 +7,7 @@ import warnings
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from deeptutor.response_languages import validate_reply_language_override
+from deeptutor.core.response_languages import validate_reply_language_override
 
 _LEGACY_RUNTIME_CONFIG_KEYS: dict[str, str] = {
     "_persist_user_message": "persist_user_message",
