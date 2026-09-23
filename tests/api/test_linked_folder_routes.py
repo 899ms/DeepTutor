@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -49,6 +50,7 @@ class _FolderManager:
             "last_sync": None,
         }
         self.update_calls: list[tuple[str, str, list[str]]] = []
+        self.mtime_calls: list[dict[str, str] | None] = []
         self.detect_result = {
             "new_files": [],
             "modified_files": [],
@@ -77,8 +79,15 @@ class _FolderManager:
     def detect_folder_changes(self, _kb_name: str, _folder_id: str) -> dict:
         return self.detect_result
 
-    def update_folder_sync_state(self, kb_name: str, folder_id: str, files: list[str]) -> None:
+    def update_folder_sync_state(
+        self,
+        kb_name: str,
+        folder_id: str,
+        files: list[str],
+        source_mtimes: dict[str, str] | None = None,
+    ) -> None:
         self.update_calls.append((kb_name, folder_id, files))
+        self.mtime_calls.append(source_mtimes)
 
     def update_kb_status(self, name: str, status: str, progress: dict | None = None) -> None:
         self.config["knowledge_bases"][name]["status"] = status
@@ -223,6 +232,8 @@ def test_completed_folder_task_records_source_paths(
     _patch_manager(monkeypatch, manager)
     source_root = tmp_path / "notes"
     source_path = source_root / "nested" / "note.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("note", encoding="utf-8")
     staged_path = tmp_path / "kb" / "raw" / "nested" / "note.md"
 
     class _SuccessfulAdder:
@@ -257,6 +268,9 @@ def test_completed_folder_task_records_source_paths(
     )
 
     assert manager.update_calls == [("kb", "folder-1", [str(source_path)])]
+    assert manager.mtime_calls == [
+        {str(source_path): datetime.fromtimestamp(source_path.stat().st_mtime).isoformat()}
+    ]
 
 
 def test_empty_completed_folder_task_advances_sync_state(
@@ -265,6 +279,8 @@ def test_empty_completed_folder_task_advances_sync_state(
     manager = _FolderManager(tmp_path)
     _patch_manager(monkeypatch, manager)
     source_path = tmp_path / "notes" / "note.md"
+    source_path.parent.mkdir(parents=True)
+    source_path.write_text("note", encoding="utf-8")
 
     class _EmptyAdder:
         def __init__(self, *_args, **_kwargs) -> None:
@@ -291,6 +307,9 @@ def test_empty_completed_folder_task_advances_sync_state(
     )
 
     assert manager.update_calls == [("kb", "folder-1", [str(source_path)])]
+    assert manager.mtime_calls == [
+        {str(source_path): datetime.fromtimestamp(source_path.stat().st_mtime).isoformat()}
+    ]
 
 
 def test_failed_folder_task_does_not_advance_sync_state(

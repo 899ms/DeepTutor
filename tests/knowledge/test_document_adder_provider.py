@@ -9,6 +9,7 @@ import pytest
 from deeptutor.knowledge.add_documents import (
     DocumentAdder,
     RawDocumentRemoval,
+    add_documents,
     remove_raw_document,
 )
 
@@ -135,7 +136,7 @@ def test_document_adder_rejects_unready_existing_version(tmp_path: Path) -> None
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="not initialized"):
+    with pytest.raises(ValueError, match="reindex required"):
         DocumentAdder(kb_name="kb", base_dir=str(tmp_path), rag_provider="llamaindex")
 
 
@@ -159,6 +160,43 @@ def test_document_adder_allows_empty_llamaindex_kb_to_bootstrap(tmp_path: Path) 
 
     assert adder.rag_provider == "llamaindex"
     assert adder.raw_dir.is_dir()
+
+
+@pytest.mark.parametrize("provider", ["graphrag", "pageindex", "pageindex-oss"])
+def test_empty_provider_kb_bootstraps_on_first_upload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str
+) -> None:
+    from deeptutor.knowledge.manager import KnowledgeBaseManager
+
+    kb_dir = tmp_path / "empty"
+    (kb_dir / "raw").mkdir(parents=True)
+    manager = KnowledgeBaseManager(base_dir=str(tmp_path))
+    manager.register_knowledge_base("empty")
+    manager.config["knowledge_bases"]["empty"]["rag_provider"] = provider
+    manager._save_config()
+    manager.update_kb_status(name="empty", status="ready")
+    assert manager.get_info("empty")["status"] == "ready"
+
+    doc = tmp_path / "lesson.md"
+    doc.write_text("Lesson", encoding="utf-8")
+    initialized: list[tuple[str, list[str]]] = []
+
+    class FakeRagService:
+        def __init__(self, *, kb_base_dir: str) -> None:
+            assert kb_base_dir == str(tmp_path)
+
+        async def initialize(self, *, kb_name: str, file_paths: list[str]) -> bool:
+            initialized.append((kb_name, file_paths))
+            return True
+
+        def _resolve_provider(self, _kb_name: str) -> str:
+            return provider
+
+    monkeypatch.setattr("deeptutor.knowledge.add_documents.RAGService", FakeRagService)
+
+    assert asyncio.run(add_documents("empty", [str(doc)], base_dir=str(tmp_path))) == 1
+    assert initialized == [("empty", [str(doc)])]
+    assert KnowledgeBaseManager(base_dir=str(tmp_path)).get_info("empty")["status"] == "ready"
 
 
 def test_document_adder_unready_index_reports_probe_summary(tmp_path: Path) -> None:

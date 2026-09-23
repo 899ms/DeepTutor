@@ -204,11 +204,22 @@ class DocumentAdder:
 
         # Both pipelines create their first index on add; existing broken versions
         # still require reindex instead of being silently replaced (#1458).
-        allows_bootstrap = self.rag_provider in {
-            DEFAULT_PROVIDER,
-            LIGHTRAG_PROVIDER,
-        } and not list_kb_versions(self.kb_dir)
+        versions = list_kb_versions(self.kb_dir)
+        allows_bootstrap = (
+            self.rag_provider
+            in {
+                DEFAULT_PROVIDER,
+                LIGHTRAG_PROVIDER,
+            }
+            and not versions
+        )
         if not has_provider_index and not allows_bootstrap:
+            if versions:
+                summary = provider_failure_summary(self.kb_dir, self.rag_provider)
+                raise ValueError(
+                    f"Knowledge base has no ready {self.rag_provider} index; reindex required: "
+                    f"{summary or 'stored index version is incomplete'}"
+                )
             raise ValueError(f"Knowledge base not initialized ({self.rag_provider}): {kb_name}")
 
         self.accepted_indexing_snapshot = accepted_indexing_snapshot

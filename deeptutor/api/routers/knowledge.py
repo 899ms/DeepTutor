@@ -1130,6 +1130,17 @@ async def run_upload_processing_task(
 
     with capture_task_logs(task_id):
         try:
+            # Snapshot before staging: changes made while indexing must still
+            # appear as modified on the next linked-folder sync.
+            source_mtimes = {}
+            if folder_id:
+                for source_path in uploaded_file_paths:
+                    try:
+                        source_mtimes[source_path] = datetime.fromtimestamp(
+                            Path(source_path).stat().st_mtime
+                        ).isoformat()
+                    except OSError:
+                        pass
             _task_log(task_id, f"Processing {len(uploaded_file_paths)} file(s) for KB '{kb_name}'")
             progress_tracker.update(
                 ProgressStage.PROCESSING_DOCUMENTS,
@@ -1172,7 +1183,9 @@ async def run_upload_processing_task(
                 if folder_id:
                     try:
                         manager = get_kb_manager()
-                        manager.update_folder_sync_state(kb_name, folder_id, uploaded_file_paths)
+                        manager.update_folder_sync_state(
+                            kb_name, folder_id, uploaded_file_paths, source_mtimes
+                        )
                         _task_log(task_id, f"Updated folder sync state: {folder_id}")
                     except Exception as sync_err:
                         _task_log(
@@ -1248,7 +1261,9 @@ async def run_upload_processing_task(
                     # Folder change detection keys state by the original
                     # source paths, so persist the complete successful input
                     # batch instead of the internal staging paths.
-                    manager.update_folder_sync_state(kb_name, folder_id, uploaded_file_paths)
+                    manager.update_folder_sync_state(
+                        kb_name, folder_id, uploaded_file_paths, source_mtimes
+                    )
                     _task_log(task_id, f"Updated folder sync state: {folder_id}")
                 except Exception as sync_err:
                     _task_log(

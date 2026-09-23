@@ -64,6 +64,15 @@ def test_update_folder_sync_state_unknown_folder_writes_nothing(tmp_path: Path) 
     assert metadata_file.read_bytes() == before
 
 
+def test_sync_snapshot_preserves_change_made_during_indexing(tmp_path: Path) -> None:
+    manager, _metadata_file, folder_id, doc = _manager_with_linked_folder(tmp_path)
+    staged_mtime = "2026-09-01T10:00:00"
+    manager.update_folder_sync_state("kb", folder_id, [str(doc)], {str(doc): staged_mtime})
+
+    changes = manager.detect_folder_changes("kb", folder_id)
+    assert changes["modified_files"] == [str(doc)]
+
+
 def test_empty_successful_sync_records_last_sync_without_changing_file_state(
     tmp_path: Path,
 ) -> None:

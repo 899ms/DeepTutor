@@ -2003,7 +2003,13 @@ class KnowledgeBaseManager:
             "modified_count": len(modified_files),
         }
 
-    def update_folder_sync_state(self, kb_name: str, folder_id: str, synced_files: list[str]):
+    def update_folder_sync_state(
+        self,
+        kb_name: str,
+        folder_id: str,
+        synced_files: list[str],
+        source_mtimes: dict[str, str] | None = None,
+    ):
         """
         Update the sync state for a linked folder after successful sync.
 
@@ -2014,6 +2020,7 @@ class KnowledgeBaseManager:
             kb_name: Knowledge base name
             folder_id: Folder ID
             synced_files: List of file paths that were successfully synced
+            source_mtimes: Modification times captured before source staging.
         """
         if kb_name not in self.list_knowledge_bases():
             raise ValueError(f"Knowledge base not found: {kb_name}")
@@ -2041,10 +2048,14 @@ class KnowledgeBaseManager:
                 file_states = folder.get("synced_files", {})
                 for file_path in synced_files:
                     try:
-                        p = Path(file_path)
-                        if p.exists():
-                            mtime = datetime.fromtimestamp(p.stat().st_mtime)
-                            file_states[file_path] = mtime.isoformat()
+                        if source_mtimes is not None:
+                            if file_path in source_mtimes:
+                                file_states[file_path] = source_mtimes[file_path]
+                        else:
+                            p = Path(file_path)
+                            if p.exists():
+                                mtime = datetime.fromtimestamp(p.stat().st_mtime)
+                                file_states[file_path] = mtime.isoformat()
                     except Exception:
                         pass
 

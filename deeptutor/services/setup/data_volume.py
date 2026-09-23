@@ -107,13 +107,6 @@ def ensure_data_volume_writable(
     target = Path(path)
     probe_uid = os.geteuid() if uid is None else uid
     probe_gid = os.getegid() if gid is None else gid
-    try:
-        target.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise DataVolumePermissionError(
-            format_data_volume_permission_error(target, uid=probe_uid, gid=probe_gid, cause=exc)
-        ) from exc
-
     drop_privs = (
         os.geteuid() == 0
         and probe_uid != 0
@@ -141,10 +134,16 @@ def check_container_data_volume(data_root: Path | str | None = None) -> None:
 def _try_write_or_raise(path: Path, uid: int, gid: int) -> None:
     probe = path / f"{_PROBE_PREFIX}-{os.getpid()}"
     try:
+        # Create as the process that will write the data. A root parent can
+        # receive EACCES on a root-squashed NAS mount even when PUID can write.
+        path.mkdir(parents=True, exist_ok=True)
         probe.write_text("ok", encoding="utf-8")
         probe.unlink(missing_ok=True)
     except OSError as exc:
-        probe.unlink(missing_ok=True)
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
         raise DataVolumePermissionError(
             format_data_volume_permission_error(path, uid=uid, gid=gid, cause=exc)
         ) from exc
@@ -163,6 +162,4 @@ def _ensure_writable_as(path: Path, uid: int, gid: int) -> None:
             os._exit(1)
     _, status = os.waitpid(pid, 0)
     if not os.WIFEXITED(status) or os.WEXITSTATUS(status) != 0:
-        raise DataVolumePermissionError(
-            format_data_volume_permission_error(path, uid=uid, gid=gid)
-        )
+        raise DataVolumePermissionError(format_data_volume_permission_error(path, uid=uid, gid=gid))

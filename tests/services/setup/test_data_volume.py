@@ -57,6 +57,24 @@ def test_ensure_writable_succeeds_on_owned_directory(tmp_path: Path) -> None:
     assert not any(target.glob(".deeptutor-write-probe-*"))
 
 
+def test_root_probe_defers_mkdir_until_after_identity_drop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "mounted" / "knowledge_bases"
+    monkeypatch.setattr("deeptutor.services.setup.data_volume.os.geteuid", lambda: 0)
+
+    def create_as_runtime_user(path: Path, uid: int, gid: int) -> None:
+        assert (uid, gid) == (1234, 1234)
+        assert not path.exists()
+        path.mkdir(parents=True)
+
+    monkeypatch.setattr(
+        "deeptutor.services.setup.data_volume._ensure_writable_as", create_as_runtime_user
+    )
+    ensure_data_volume_writable(target, uid=1234, gid=1234)
+    assert target.is_dir()
+
+
 def test_ensure_unwritable_directory_fail_fasts(tmp_path: Path) -> None:
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         pytest.skip("root bypasses directory mode bits")
@@ -70,9 +88,7 @@ def test_ensure_unwritable_directory_fail_fasts(tmp_path: Path) -> None:
         target.chmod(0o755)
 
 
-def test_check_container_data_volume_probes_knowledge_bases(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_check_container_data_volume_probes_knowledge_bases(tmp_path: Path, monkeypatch) -> None:
     data_root = tmp_path / "app-data"
     monkeypatch.setenv("PUID", "1000")
     monkeypatch.setenv("PGID", "1000")
