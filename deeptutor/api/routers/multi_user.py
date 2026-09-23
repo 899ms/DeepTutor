@@ -26,11 +26,12 @@ from deeptutor.multi_user.device_credentials import revoke_device_credentials_fo
 from deeptutor.multi_user.grants import (
     LEARNING_AGE_BANDS,
     LEARNING_SURFACES,
-    grant_path,
     learner_grant,
     load_grant,
     normalize_grant,
+    restore_grant_if_unchanged,
     save_grant,
+    save_grant_with_receipt,
     validate_grant,
 )
 from deeptutor.multi_user.guardians import (
@@ -59,7 +60,6 @@ from deeptutor.reading import ReadingStore
 from deeptutor.reading.extensions import get_reading_extension_registry
 from deeptutor.services.auth import POCKETBASE_ENABLED, hash_password
 from deeptutor.services.config.model_catalog import ModelCatalogService
-from deeptutor.services.file_io import atomic_write_text
 
 router = APIRouter()
 
@@ -690,40 +690,38 @@ async def put_guardian_restrictions(
     reading["allow_upload"] = payload.allow_upload
     reading["extensions"] = payload.extensions
     needs_preset_update = learner_record.get("preset") != "learner"
-    previous_grant_path = grant_path(learner_user_id) if needs_preset_update else None
-    previous_grant_text = (
-        previous_grant_path.read_text(encoding="utf-8")
-        if previous_grant_path is not None and previous_grant_path.exists()
-        else None
-    )
     try:
         grant = normalize_grant(learner_user_id, grant)
         validate_grant(grant)
         _validate_reading_policy(grant)
-        grant = save_grant(learner_user_id, grant)
+        if needs_preset_update:
+            grant, receipt = save_grant_with_receipt(learner_user_id, grant)
+        else:
+            grant = save_grant(learner_user_id, grant)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="Learner grant could not be saved") from exc
     if needs_preset_update:
         preset_error: Exception | None = None
         try:
-            preset_saved = set_preset(learner_username, "learner")
+            preset_saved = set_preset(learner_username, "learner", expected_user_id=learner_user_id)
         except Exception as exc:
             preset_saved = False
             preset_error = exc
         if not preset_saved:
-            # The grant and account preset live in separate files. Restore the
-            # exact prior grant if the second write fails, including absence.
-            assert previous_grant_path is not None
             try:
-                if previous_grant_text is None:
-                    previous_grant_path.unlink(missing_ok=True)
-                else:
-                    atomic_write_text(previous_grant_path, previous_grant_text)
+                restored = restore_grant_if_unchanged(learner_user_id, receipt)
             except OSError as exc:
                 raise HTTPException(
                     status_code=500,
                     detail="Learner preset update failed and the prior grant could not be restored",
                 ) from exc
+            if not restored:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Learner preset update failed; a later grant change was preserved",
+                ) from preset_error
             raise HTTPException(
                 status_code=500 if preset_error is not None else 409,
                 detail="Learner preset update failed; the prior grant was restored",

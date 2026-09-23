@@ -473,7 +473,9 @@ def set_role(username: str, role: Role) -> bool:
     return True
 
 
-def set_preset(username: str, preset: AccountPreset) -> bool:
+def set_preset(
+    username: str, preset: AccountPreset, *, expected_user_id: str | None = None
+) -> bool:
     """Update an account's configuration preset without changing its role."""
     if preset not in {"standard", "learner", "custom"}:
         raise ValueError("preset must be 'standard', 'learner', or 'custom'")
@@ -482,6 +484,11 @@ def set_preset(username: str, preset: AccountPreset) -> bool:
     with _USERS_WRITE_LOCK:
         users = load_users()
         if username not in users:
+            return False
+        if (
+            expected_user_id is not None
+            and str(users[username].get("id") or "") != expected_user_id
+        ):
             return False
         users[username]["preset"] = preset
         _write_users(users)
