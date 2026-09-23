@@ -122,11 +122,21 @@ class TestStoreTailRollback:
 class _FakeStartTurnRecorder:
     """Captures the payload passed to ``start_turn`` without launching it."""
 
-    def __init__(self) -> None:
+    def __init__(self, store: SQLiteSessionStore) -> None:
+        self.store = store
         self.calls: list[dict[str, Any]] = []
+        self.replaced_assistant_ids: list[int | str] = []
 
-    async def __call__(self, payload: dict[str, Any]) -> tuple[dict, dict]:
+    async def __call__(
+        self,
+        payload: dict[str, Any],
+        *,
+        replace_assistant_message_id: int | str | None = None,
+    ) -> tuple[dict, dict]:
         self.calls.append(payload)
+        if replace_assistant_message_id is not None:
+            self.replaced_assistant_ids.append(replace_assistant_message_id)
+            await self.store.delete_message(replace_assistant_message_id)
         return (
             {"id": payload["session_id"]},
             {"id": "fake-turn", "session_id": payload["session_id"]},
@@ -183,7 +193,7 @@ class TestRegenerateLastTurn:
     ) -> None:
         sid, user_id, assistant_id = _seed_session(store)
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
 
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid))
@@ -243,7 +253,7 @@ class TestRegenerateLastTurn:
             )
         )
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(
                 runtime.regenerate_last_turn(
@@ -314,7 +324,7 @@ class TestRegenerateLastTurn:
             )
         )
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
         overrides = {"replay_snapshot": True} if replay_snapshot else None
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid, overrides=overrides))
@@ -372,7 +382,7 @@ class TestRegenerateLastTurn:
             },
         )
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(
                 runtime.regenerate_last_turn(
@@ -404,21 +414,29 @@ class TestRegenerateLastTurn:
     def test_regenerate_preserves_pocketbase_message_id(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(store, assistant_content=None)
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
+        deleted_ids: list[str] = []
 
         async def last_message(_session_id: str, role: str | None = None):
             if role == "user":
                 return {"id": "pbRecord123abc", "role": "user", "content": "try again"}
-            return None
+            return {"id": "pbAnswer123abc", "role": "assistant", "content": "old answer"}
+
+        async def delete_message(message_id: int | str) -> bool:
+            deleted_ids.append(str(message_id))
+            return True
 
         with (
             patch.object(store, "get_last_message", new=last_message),
+            patch.object(store, "delete_message", new=delete_message),
             patch.object(runtime, "start_turn", new=recorder),
         ):
             asyncio.run(runtime.regenerate_last_turn(sid, overrides={"replay_snapshot": True}))
 
         payload = recorder.calls[0]
         assert payload["regenerated_from_message_id"] == "pbRecord123abc"
+        assert recorder.replaced_assistant_ids == ["pbAnswer123abc"]
+        assert deleted_ids == ["pbAnswer123abc"]
 
     def test_validation_failure_preserves_existing_assistant_message(
         self, store: SQLiteSessionStore
@@ -437,6 +455,71 @@ class TestRegenerateLastTurn:
         remaining = asyncio.run(store.get_messages(sid))
         assert [message["id"] for message in remaining] == [user_id, assistant_id]
 
+    @pytest.mark.parametrize("rejected_at", ["capability", "workspace", "llm"])
+    @pytest.mark.parametrize("replay_snapshot", [False, True])
+    def test_admission_rejection_preserves_existing_assistant_message(
+        self,
+        store: SQLiteSessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+        rejected_at: str,
+        replay_snapshot: bool,
+    ) -> None:
+        sid, user_id, assistant_id = _seed_session(store)
+        runtime = TurnRuntimeManager(store=store)
+        overrides: dict[str, Any] = {"replay_snapshot": True} if replay_snapshot else {}
+
+        def reject(*_args: Any, **_kwargs: Any) -> None:
+            raise PermissionError(f"{rejected_at} access revoked")
+
+        if rejected_at == "capability":
+            monkeypatch.setattr(
+                "deeptutor.multi_user.learning_access.apply_learning_policy", reject
+            )
+        elif rejected_at == "workspace":
+            asyncio.run(store.update_session_preferences(sid, {"workspace_id": "revoked"}))
+            monkeypatch.setattr(
+                "deeptutor.services.workspace.get_content_workspace_service", reject
+            )
+        else:
+            overrides["llm_selection"] = {
+                "profile_id": "revoked-profile",
+                "model_id": "revoked-model",
+            }
+            monkeypatch.setattr(
+                "deeptutor.multi_user.model_access.apply_allowed_llm_selection", reject
+            )
+
+        with pytest.raises((RuntimeError, PermissionError), match="access revoked"):
+            asyncio.run(runtime.regenerate_last_turn(sid, overrides=overrides))
+
+        # Admission did not launch a replacement, so both the old answer and
+        # its original id must still be available for display or another try.
+        remaining = asyncio.run(store.get_messages(sid))
+        assert [message["id"] for message in remaining] == [user_id, assistant_id]
+        assert remaining[-1]["content"] == "4"
+        assert asyncio.run(store.get_active_turn(sid)) is None
+
+    def test_replacement_deletion_failure_keeps_old_answer_and_aborts_launch(
+        self,
+        store: SQLiteSessionStore,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sid, user_id, assistant_id = _seed_session(store)
+        runtime = TurnRuntimeManager(store=store)
+
+        async def refuse_delete(_message_id: int | str) -> bool:
+            return False
+
+        monkeypatch.setattr(store, "delete_message", refuse_delete)
+        with pytest.raises(RuntimeError, match="Unable to replace the previous assistant"):
+            asyncio.run(runtime.regenerate_last_turn(sid))
+
+        assert [message["id"] for message in asyncio.run(store.get_messages(sid))] == [
+            user_id,
+            assistant_id,
+        ]
+        assert asyncio.run(store.get_active_turn(sid)) is None
+
     def test_replays_book_references_from_request_snapshot(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(
             store,
@@ -447,7 +530,7 @@ class TestRegenerateLastTurn:
             },
         )
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
 
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid))
@@ -462,7 +545,7 @@ class TestRegenerateLastTurn:
             user_metadata={"request_snapshot": {"masteryPathId": "path-1"}},
         )
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
 
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid))
@@ -472,7 +555,7 @@ class TestRegenerateLastTurn:
     def test_user_tail_is_kept_and_no_delete(self, store: SQLiteSessionStore) -> None:
         sid, user_id, _ = _seed_session(store, assistant_content=None)
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
 
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(runtime.regenerate_last_turn(sid))
@@ -625,7 +708,7 @@ class TestRegenerateLastTurn:
     def test_overrides_take_precedence(self, store: SQLiteSessionStore) -> None:
         sid, _, _ = _seed_session(store)
         runtime = TurnRuntimeManager(store=store)
-        recorder = _FakeStartTurnRecorder()
+        recorder = _FakeStartTurnRecorder(store)
 
         with patch.object(runtime, "start_turn", new=recorder):
             asyncio.run(

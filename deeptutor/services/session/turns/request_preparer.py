@@ -128,7 +128,12 @@ class TurnRequestPreparer:
         async def _coordinate_execution(self, execution: _TurnExecution) -> None: ...
 
     @workspace_writer
-    async def start_turn(self, payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    async def start_turn(
+        self,
+        payload: dict[str, Any],
+        *,
+        replace_assistant_message_id: int | str | None = None,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         await self._ensure_accepting_turns()
         from deeptutor.services.workspace.context import get_workspace_scope
 
@@ -763,6 +768,14 @@ class TurnRequestPreparer:
                     metadata=session_metadata,
                 ),
             )
+            # Regenerate must remove the old answer before the new task reads
+            # conversation history. Do it only after the new turn has passed
+            # admission (including workspace, capability, and model access),
+            # while no execution task has been scheduled yet. A rejected replay
+            # must leave the original assistant row and its id intact.
+            if replace_assistant_message_id is not None:
+                if not await self.store.delete_message(replace_assistant_message_id):
+                    raise RuntimeError("Unable to replace the previous assistant message")
             async with self._lock:
                 from deeptutor.services.workspace.activity import acquire_activity
 
@@ -1020,6 +1033,12 @@ class TurnRequestPreparer:
         # supersedes. A malformed stored snapshot or override must leave the
         # visible conversation intact so the learner can retry safely.
         TurnRequest.model_validate(payload)
-        if last_message is not None and last_message.get("role") == "assistant":
-            await self.store.delete_message(last_message["id"])
-        return await self.start_turn(payload)
+        replace_assistant_message_id = (
+            last_message["id"]
+            if last_message is not None and last_message.get("role") == "assistant"
+            else None
+        )
+        return await self.start_turn(
+            payload,
+            replace_assistant_message_id=replace_assistant_message_id,
+        )
