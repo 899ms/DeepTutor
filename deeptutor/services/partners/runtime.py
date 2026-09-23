@@ -116,7 +116,12 @@ def _thread_delivery_meta(msg: InboundMessage) -> dict[str, Any]:
     """
     in_meta = msg.metadata or {}
     meta: dict[str, Any] = {}
-    for key in ("message_thread_id", "message_id", "_feishu_model_picker_message_id"):
+    for key in (
+        "message_thread_id",
+        "message_id",
+        "_feishu_model_picker_message_id",
+        "_feishu_model_picker_id",
+    ):
         value = in_meta.get(key)
         if value is not None:
             meta[key] = value

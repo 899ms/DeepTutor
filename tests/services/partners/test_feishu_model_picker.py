@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -165,6 +165,16 @@ async def test_runner_carries_picker_result_to_feishu_delivery(monkeypatch, part
     assert "Link this chat" in denied
     assert "_feishu_model_switch_success" not in callback_metadata
 
+    callback = _message("/model profile m1", actor=SimpleNamespace(is_admin=True))
+    callback.metadata.update(
+        {"_feishu_model_picker_message_id": "om_picker", "_feishu_model_picker_id": "picker"}
+    )
+    await runner._handle_inbound(callback)
+    outbound = await runner.bus.consume_outbound()
+    assert outbound.metadata["_feishu_model_picker_message_id"] == "om_picker"
+    assert outbound.metadata["_feishu_model_picker_id"] == "picker"
+    assert outbound.metadata["_feishu_model_switch_success"] is True
+
 
 @pytest.mark.asyncio
 async def test_private_picker_pages_in_place_and_queues_selection() -> None:
@@ -177,10 +187,22 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
             "profile_id": "profile",
             "model_id": f"model-{index}",
             "provider_label": "OpenAI",
+            "profile_name": "Primary",
             "model_name": f"Model {index}",
+            "model": f"m{index}",
         }
         for index in range(8)
+    ] + [
+        {
+            "profile_id": "second",
+            "model_id": "model-b",
+            "provider_label": "OpenAI",
+            "profile_name": "Backup",
+            "model_name": "Model 7",
+            "model": "backup-wire",
+        }
     ]
+    options[6]["model_name"] = "Model 7"  # duplicate display name within one profile
     await channel.send(
         OutboundMessage(
             channel="feishu",
@@ -188,6 +210,10 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
             content="Available models",
             metadata={
                 "_feishu_model_options": options,
+                "_feishu_model_providers": [
+                    {"profile_id": "profile", "profile_name": "Primary"},
+                    {"profile_id": "second", "profile_name": "Backup"},
+                ],
                 "_feishu_model_current": {"profile_id": "profile", "model_id": "model-0"},
             },
         )
@@ -196,34 +222,153 @@ async def test_private_picker_pages_in_place_and_queues_selection() -> None:
     assert send_args[:3] == ("open_id", "ou_owner", "interactive")
     first = json.loads(send_args[3])
     first_actions = [e for e in first["elements"] if e["tag"] == "action"]
-    assert len(first_actions) == 7  # six models and one page action
+    assert len(first_actions) == 2  # one button per provider, with no model count
+    assert first_actions[0]["actions"][0]["text"]["content"] == "✓ Primary"
+    assert first_actions[1]["actions"][0]["text"]["content"] == "Backup"
     picker_id = first_actions[0]["actions"][0]["value"]["picker_id"]
     assert len(picker_id) == 16
     assert "model_id" not in first_actions[0]["actions"][0]["value"]
 
+    provider_response = channel._on_card_action_sync(
+        _callback({"picker_id": picker_id, "action": "pick_provider", "index": 0})
+    )
+    assert provider_response.card.type == "raw"
+    provider_card = provider_response.card.data
+    assert "Primary · Choose a model" in provider_card["elements"][0]["text"]["content"]
+    assert len([e for e in provider_card["elements"] if e["tag"] == "action"]) == 7
+
     page_response = channel._on_card_action_sync(
-        _callback({"picker_id": picker_id, "action": "page", "page": 1})
+        _callback({"picker_id": picker_id, "action": "page", "provider_index": 0, "page": 1})
     )
     assert page_response.card.type == "raw"
     assert "Page 2 of 2" in page_response.card.data["elements"][0]["text"]["content"]
     assert len([e for e in page_response.card.data["elements"] if e["tag"] == "action"]) == 3
+    assert "Model 7 (m6)" in page_response.card.data["elements"][1]["actions"][0]["text"]["content"]
+    assert "Model 7 (m7)" in page_response.card.data["elements"][2]["actions"][0]["text"]["content"]
     assert channel.bus.inbound.empty()
     channel._send_message_sync.assert_called_once()  # page callback sends no message
 
     wrong_user = channel._on_card_action_sync(
-        _callback({"picker_id": picker_id, "action": "select", "index": 7}, sender="ou_other")
+        _callback(
+            {"picker_id": picker_id, "action": "select", "provider_index": 0, "index": 7},
+            sender="ou_other",
+        )
     )
     assert wrong_user.toast.type == "error"
     assert channel.bus.inbound.empty()
 
     switching = channel._on_card_action_sync(
-        _callback({"picker_id": picker_id, "action": "select", "index": 7})
+        _callback({"picker_id": picker_id, "action": "select", "provider_index": 0, "index": 7})
     )
     assert "⏳ Switching model" in switching.card.data["elements"][0]["text"]["content"]
     inbound = await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)
-    assert inbound.content == "/model profile model-7"
+    assert inbound.content == "/model profile m7"
     assert inbound.chat_id == "ou_owner"  # callback context has oc_, send target is ou_
     assert inbound.metadata["_feishu_model_picker_message_id"] == "om_picker"
+    assert inbound.metadata["_feishu_model_picker_id"] == picker_id
+
+    channel._client.im.v1.message.patch.return_value = SimpleNamespace(success=lambda: True)
+    await channel.send(
+        OutboundMessage(
+            channel="feishu",
+            chat_id="ou_owner",
+            content="✅ Switched model: OpenAI · Model 0 → OpenAI · Model 7.",
+            metadata={
+                "_feishu_model_picker_message_id": "om_picker",
+                "_feishu_model_picker_id": picker_id,
+                "_feishu_model_switch_success": True,
+            },
+        )
+    )
+    patched = json.loads(channel._client.im.v1.message.patch.call_args.args[0].request_body.content)
+    assert "✅ Switched model" in patched["elements"][0]["text"]["content"]
+    assert "Page 2 of 2" in patched["elements"][1]["text"]["content"]
+    assert channel._model_pickers[picker_id].pending is False
+    assert channel._model_pickers[picker_id].current == {
+        "profile_id": "profile",
+        "model_id": "model-7",
+    }
+
+    back = channel._on_card_action_sync(_callback({"picker_id": picker_id, "action": "providers"}))
+    assert back.card.data["elements"][0]["text"]["content"] == "Choose a provider"
+    scoped = channel._on_card_action_sync(
+        _callback({"picker_id": picker_id, "action": "pick_provider", "index": 1})
+    )
+    scoped_actions = [e for e in scoped.card.data["elements"] if e["tag"] == "action"]
+    assert len(scoped_actions) == 2  # one model plus back button
+    assert "Model 7" in scoped_actions[0]["actions"][0]["text"]["content"]
+    second = channel._on_card_action_sync(
+        _callback({"picker_id": picker_id, "action": "select", "provider_index": 1, "index": 8})
+    )
+    assert second.card.type == "raw"  # the first switch released the guard
+    second_inbound = await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)
+    assert second_inbound.content == "/model second backup-wire"
+
+    await channel.send(
+        OutboundMessage(
+            channel="feishu",
+            chat_id="ou_owner",
+            content="Could not switch model: catalog changed.",
+            metadata={
+                "_feishu_model_picker_message_id": "om_picker",
+                "_feishu_model_picker_id": picker_id,
+            },
+        )
+    )
+    failed_card = json.loads(
+        channel._client.im.v1.message.patch.call_args.args[0].request_body.content
+    )
+    assert "⚠️ Could not switch model" in failed_card["elements"][0]["text"]["content"]
+    assert channel._model_pickers[picker_id].pending is False
+    assert channel._model_pickers[picker_id].current["profile_id"] == "profile"
+    retry = channel._on_card_action_sync(
+        _callback({"picker_id": picker_id, "action": "select", "provider_index": 1, "index": 8})
+    )
+    assert retry.card.type == "raw"
+    assert (await asyncio.wait_for(channel.bus.consume_inbound(), timeout=1)).content == (
+        "/model second backup-wire"
+    )
+
+
+@pytest.mark.asyncio
+async def test_picker_releases_guard_if_callback_cannot_queue_command() -> None:
+    pytest.importorskip("lark_oapi")
+    channel = _channel()
+    channel._loop = asyncio.get_running_loop()
+    channel._send_message_sync = MagicMock(return_value=True)
+    channel._handle_message = AsyncMock(side_effect=RuntimeError("queue unavailable"))
+    await channel.send(
+        OutboundMessage(
+            channel="feishu",
+            chat_id="ou_owner",
+            content="Available models",
+            metadata={
+                "_feishu_model_options": [
+                    {
+                        "profile_id": "profile",
+                        "model_id": "model-1",
+                        "model_name": "Model 1",
+                        "model": "m1",
+                    }
+                ]
+            },
+        )
+    )
+    card = json.loads(channel._send_message_sync.call_args.args[3])
+    picker_id = card["elements"][1]["actions"][0]["value"]["picker_id"]
+    response = channel._on_card_action_sync(
+        _callback({"picker_id": picker_id, "action": "select", "provider_index": 0, "index": 0})
+    )
+    assert response.card.type == "raw"
+
+    async def guard_released() -> bool:
+        for _ in range(20):
+            if not channel._model_pickers[picker_id].pending:
+                return True
+            await asyncio.sleep(0.01)
+        return False
+
+    assert await guard_released()
 
 
 @pytest.mark.asyncio

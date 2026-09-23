@@ -288,16 +288,45 @@ class PartnerCommandHandler:
             ),
             None,
         )
+        name_counts: dict[str, int] = {}
+        for row in options:
+            key = row["model_name"].casefold()
+            name_counts[key] = name_counts.get(key, 0) + 1
+
+        def option_label(row: dict[str, Any]) -> str:
+            label = f"{row['provider_label']} · {row['model_name']}"
+            if name_counts[row["model_name"].casefold()] > 1:
+                label += f" ({row['model']})"
+            return label
+
         if not args:
             if not options:
                 return PartnerCommandResult("No chat models are configured for this account.")
             lines = ["Available models:"]
             for index, row in enumerate(options, 1):
                 selected = " (current)" if row is current else ""
-                lines.append(f"{index}. {row['provider_label']} · {row['model_name']}{selected}")
-            lines.append("Use /model <number> to switch.")
+                lines.append(f"{index}. {option_label(row)}{selected}")
+            lines.append("Use /model <number> or /model <wire model name> to switch.")
+            providers: list[dict[str, str]] = []
+            seen_profiles: set[str] = set()
+            for row in options:
+                profile_id = row["profile_id"]
+                if profile_id in seen_profiles:
+                    continue
+                seen_profiles.add(profile_id)
+                providers.append(
+                    {
+                        "profile_id": profile_id,
+                        "provider_label": row["provider_label"],
+                        "profile_name": row["profile_name"],
+                    }
+                )
             metadata = (
-                {"_feishu_model_options": options, "_feishu_model_current": active}
+                {
+                    "_feishu_model_options": options,
+                    "_feishu_model_providers": providers,
+                    "_feishu_model_current": active,
+                }
                 if msg.channel == "feishu" and (msg.metadata or {}).get("chat_type") == "p2p"
                 else None
             )
@@ -309,26 +338,33 @@ class PartnerCommandHandler:
             if 0 <= index < len(options):
                 choice = options[index]
         elif len(args) == 2:
-            choice = next(
-                (
-                    row
-                    for row in options
-                    if row["profile_id"] == args[0] and row["model_id"] == args[1]
-                ),
-                None,
-            )
+            profile_options = [row for row in options if row["profile_id"] == args[0]]
+            wire_matches = [row for row in profile_options if row["model"] == args[1]]
+            if len(wire_matches) > 1:
+                return PartnerCommandResult(
+                    "That wire model name is ambiguous. Use its /model number."
+                )
+            if wire_matches:
+                choice = wire_matches[0]
+            else:
+                choice = next((row for row in profile_options if row["model_id"] == args[1]), None)
         if choice is None and not (len(args) == 1 and args[0].isdigit()):
             requested_name = " ".join(args)
             matches = [
-                row
-                for row in options
-                if requested_name.casefold()
-                in {row["model_name"].casefold(), row["model"].casefold()}
+                row for row in options if row["model"].casefold() == requested_name.casefold()
             ]
+            if not matches:
+                matches = [
+                    row
+                    for row in options
+                    if row["model_name"].casefold() == requested_name.casefold()
+                ]
             if len(matches) == 1:
                 choice = matches[0]
             elif len(matches) > 1:
-                return PartnerCommandResult("That model name is ambiguous. Use its /model number.")
+                return PartnerCommandResult(
+                    "That model name is ambiguous. Use its /model number or wire model name."
+                )
         if choice is None:
             return PartnerCommandResult("Unknown model. Use /model to see available numbers.")
 
@@ -341,17 +377,13 @@ class PartnerCommandHandler:
         except (PermissionError, ValueError) as exc:
             return PartnerCommandResult(str(exc))
 
-        selected_label = f"{choice['provider_label']} · {choice['model_name']}"
+        selected_label = option_label(choice)
         if selection == configured_selection and not legacy_model:
             return PartnerCommandResult(
                 f"✅ Already using {selected_label}.", {"_feishu_model_switch_success": True}
             )
         previous_label = (
-            legacy_model
-            if legacy_model
-            else f"{current['provider_label']} · {current['model_name']}"
-            if current
-            else "default"
+            legacy_model if legacy_model else option_label(current) if current else "default"
         )
         old_selection = getattr(self.config, "llm_selection", None)
         old_legacy_model = getattr(self.config, "model", None)

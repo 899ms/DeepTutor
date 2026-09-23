@@ -322,10 +322,12 @@ class _ModelPicker:
     """Server-owned model choices; card button values contain only an index."""
 
     sender_id: str
+    providers: list[dict[str, Any]]
     options: list[dict[str, Any]]
     current: dict[str, str]
     created_at: float
     pending: bool = False
+    pending_index: int | None = None
 
 
 class FeishuChannel(BaseChannel):
@@ -1471,27 +1473,105 @@ class FeishuChannel(BaseChannel):
         model = str(option.get("model_name") or option.get("model") or "model")
         return f"{provider} · {model}"
 
-    def _model_picker_card(self, picker_id: str, picker: _ModelPicker, page: int) -> dict[str, Any]:
+    @staticmethod
+    def _provider_label(provider: dict[str, Any]) -> str:
+        return str(
+            provider.get("profile_name")
+            or provider.get("provider_label")
+            or provider.get("profile_id")
+            or "LLM"
+        )
+
+    @staticmethod
+    def _provider_option_indices(picker: _ModelPicker, provider_index: int) -> list[int]:
+        profile_id = picker.providers[provider_index]["profile_id"]
+        return [
+            index
+            for index, option in enumerate(picker.options)
+            if option.get("profile_id") == profile_id
+        ]
+
+    def _provider_picker_card(self, picker_id: str, picker: _ModelPicker) -> dict[str, Any]:
+        elements: list[dict[str, Any]] = [
+            {"tag": "div", "text": {"tag": "plain_text", "content": "Choose a provider"}}
+        ]
+        for index, provider in enumerate(picker.providers):
+            current = picker.current.get("profile_id") == provider.get("profile_id")
+            elements.append(
+                {
+                    "tag": "action",
+                    "actions": [
+                        {
+                            "tag": "button",
+                            "text": {
+                                "tag": "plain_text",
+                                "content": f"{'✓ ' if current else ''}{self._provider_label(provider)}"[
+                                    :90
+                                ],
+                            },
+                            "type": "primary" if current else "default",
+                            "value": {
+                                "picker_id": picker_id,
+                                "action": "pick_provider",
+                                "index": index,
+                            },
+                        }
+                    ],
+                }
+            )
+        return {
+            "config": {"wide_screen_mode": True},
+            "header": {"title": {"tag": "plain_text", "content": "Switch model"}},
+            "elements": elements,
+        }
+
+    def _model_picker_card(
+        self,
+        picker_id: str,
+        picker: _ModelPicker,
+        provider_index: int,
+        page: int,
+        *,
+        status: str = "",
+    ) -> dict[str, Any]:
+        option_indices = self._provider_option_indices(picker, provider_index)
         total_pages = max(
-            1, (len(picker.options) + self._MODEL_PAGE_SIZE - 1) // self._MODEL_PAGE_SIZE
+            1, (len(option_indices) + self._MODEL_PAGE_SIZE - 1) // self._MODEL_PAGE_SIZE
         )
         page = max(0, min(page, total_pages - 1))
         start = page * self._MODEL_PAGE_SIZE
-        elements: list[dict[str, Any]] = [
+        provider = picker.providers[provider_index]
+        name_counts: dict[str, int] = {}
+        for index in option_indices:
+            option = picker.options[index]
+            name = str(option.get("model_name") or option.get("model") or "model").casefold()
+            name_counts[name] = name_counts.get(name, 0) + 1
+        elements: list[dict[str, Any]] = []
+        if status:
+            elements.append({"tag": "div", "text": {"tag": "plain_text", "content": status}})
+        elements.append(
             {
                 "tag": "div",
                 "text": {
                     "tag": "plain_text",
-                    "content": f"Choose a model · Page {page + 1} of {total_pages}",
+                    "content": (
+                        f"{self._provider_label(provider)} · Choose a model · "
+                        f"Page {page + 1} of {total_pages}"
+                    ),
                 },
             }
-        ]
-        for index in range(start, min(start + self._MODEL_PAGE_SIZE, len(picker.options))):
+        )
+        for local_index, index in enumerate(
+            option_indices[start : start + self._MODEL_PAGE_SIZE], start=start
+        ):
             option = picker.options[index]
             current = picker.current.get("profile_id") == option.get(
                 "profile_id"
             ) and picker.current.get("model_id") == option.get("model_id")
-            label = f"{'✓ ' if current else ''}{index + 1}. {self._model_label(option)}"
+            model_name = str(option.get("model_name") or option.get("model") or "model")
+            if name_counts[model_name.casefold()] > 1:
+                model_name += f" ({option['model']})"
+            label = f"{'✓ ' if current else ''}{local_index + 1}. {model_name}"
             elements.append(
                 {
                     "tag": "action",
@@ -1500,7 +1580,12 @@ class FeishuChannel(BaseChannel):
                             "tag": "button",
                             "text": {"tag": "plain_text", "content": label[:90]},
                             "type": "primary" if current else "default",
-                            "value": {"picker_id": picker_id, "action": "select", "index": index},
+                            "value": {
+                                "picker_id": picker_id,
+                                "action": "select",
+                                "provider_index": provider_index,
+                                "index": index,
+                            },
                         }
                     ],
                 }
@@ -1513,11 +1598,23 @@ class FeishuChannel(BaseChannel):
                         "tag": "button",
                         "text": {"tag": "plain_text", "content": label},
                         "type": "default",
-                        "value": {"picker_id": picker_id, "action": "page", "page": target},
+                        "value": {
+                            "picker_id": picker_id,
+                            "action": "page",
+                            "provider_index": provider_index,
+                            "page": target,
+                        },
                     }
                 )
-        if navigation:
-            elements.append({"tag": "action", "actions": navigation})
+        navigation.append(
+            {
+                "tag": "button",
+                "text": {"tag": "plain_text", "content": "◀ Providers"},
+                "type": "default",
+                "value": {"picker_id": picker_id, "action": "providers"},
+            }
+        )
+        elements.append({"tag": "action", "actions": navigation})
         return {
             "config": {"wide_screen_mode": True},
             "header": {"title": {"tag": "plain_text", "content": "Switch model"}},
@@ -1532,7 +1629,7 @@ class FeishuChannel(BaseChannel):
             "elements": [{"tag": "div", "text": {"tag": "plain_text", "content": content}}],
         }
 
-    def _patch_model_card_sync(self, message_id: str, content: str) -> bool:
+    def _patch_model_card_sync(self, message_id: str, card: dict[str, Any]) -> bool:
         """Replace the clicked card after the command finishes."""
         from lark_oapi.api.im.v1 import PatchMessageRequest, PatchMessageRequestBody
 
@@ -1542,7 +1639,7 @@ class FeishuChannel(BaseChannel):
                 .message_id(message_id)
                 .request_body(
                     PatchMessageRequestBody.builder()
-                    .content(json.dumps(self._model_status_card(content), ensure_ascii=False))
+                    .content(json.dumps(card, ensure_ascii=False))
                     .build()
                 )
                 .build()
@@ -1561,13 +1658,18 @@ class FeishuChannel(BaseChannel):
         return False
 
     async def _queue_model_choice(
-        self, *, sender_id: str, message_id: str, option: dict[str, Any]
+        self,
+        *,
+        sender_id: str,
+        message_id: str,
+        picker_id: str,
+        option: dict[str, Any],
     ) -> None:
         """Enter the normal Partner command runner after the callback has returned."""
         command = (
             "/model "
             f"{shlex.quote(str(option['profile_id']))} "
-            f"{shlex.quote(str(option['model_id']))}"
+            f"{shlex.quote(str(option.get('model') or option['model_id']))}"
         )
         await self._handle_message(
             sender_id=sender_id,
@@ -1576,6 +1678,7 @@ class FeishuChannel(BaseChannel):
             metadata={
                 "chat_type": "p2p",
                 "_feishu_model_picker_message_id": message_id,
+                "_feishu_model_picker_id": picker_id,
             },
         )
 
@@ -1620,17 +1723,34 @@ class FeishuChannel(BaseChannel):
             if picker.pending:
                 return error_response("A model switch is already in progress.")
             action = value.get("action")
+            if action == "providers":
+                return card_response(self._provider_picker_card(picker_id, picker))
+            if action == "pick_provider":
+                provider_index = value.get("index")
+                if (
+                    type(provider_index) is not int
+                    or not 0 <= provider_index < len(picker.providers)
+                    or not self._provider_option_indices(picker, provider_index)
+                ):
+                    return error_response("Invalid model provider.")
+                return card_response(self._model_picker_card(picker_id, picker, provider_index, 0))
+            provider_index = value.get("provider_index")
+            if type(provider_index) is not int or not 0 <= provider_index < len(picker.providers):
+                return error_response("Invalid model provider.")
+            option_indices = self._provider_option_indices(picker, provider_index)
             if action == "page":
                 page = value.get("page")
                 if type(page) is not int or not 0 <= page * self._MODEL_PAGE_SIZE < len(
-                    picker.options
+                    option_indices
                 ):
                     return error_response("Invalid model picker page.")
-                return card_response(self._model_picker_card(picker_id, picker, page))
+                return card_response(
+                    self._model_picker_card(picker_id, picker, provider_index, page)
+                )
             if action != "select":
                 return error_response("Invalid model picker action.")
             index = value.get("index")
-            if type(index) is not int or not 0 <= index < len(picker.options):
+            if type(index) is not int or index not in option_indices:
                 return error_response("Invalid model choice.")
             loop = self._loop
             if loop is None or not loop.is_running():
@@ -1646,20 +1766,41 @@ class FeishuChannel(BaseChannel):
                 None,
             )
             previous = self._model_label(current) if current else "default"
-            pending_card = self._model_status_card(
-                f"⏳ Switching model: {previous} → {self._model_label(option)}…"
+            pending_page = option_indices.index(index) // self._MODEL_PAGE_SIZE
+            pending_card = self._model_picker_card(
+                picker_id,
+                picker,
+                provider_index,
+                pending_page,
+                status=f"⏳ Switching model: {previous} → {self._model_label(option)}…",
             )
             picker.pending = True
+            picker.pending_index = index
             try:
-                asyncio.run_coroutine_threadsafe(
+                queued = asyncio.run_coroutine_threadsafe(
                     self._queue_model_choice(
-                        sender_id=sender_id, message_id=message_id, option=option
+                        sender_id=sender_id,
+                        message_id=message_id,
+                        picker_id=picker_id,
+                        option=option,
                     ),
                     loop,
                 )
             except RuntimeError:
                 picker.pending = False
+                picker.pending_index = None
                 return error_response("The bot is reconnecting. Send /model again.")
+
+            def release_failed_queue(future: Any) -> None:
+                if not future.cancelled() and future.exception() is None:
+                    return
+                with self._model_picker_lock:
+                    live = self._model_pickers.get(picker_id)
+                    if live is picker and live.pending_index == index:
+                        live.pending = False
+                        live.pending_index = None
+
+            queued.add_done_callback(release_failed_queue)
             return card_response(pending_card)
 
     async def send(self, msg: OutboundMessage) -> None:
@@ -1679,8 +1820,40 @@ class FeishuChannel(BaseChannel):
             if picker_message_id:
                 completed = bool(metadata.get("_feishu_model_switch_success"))
                 content = msg.content if completed else f"⚠️ {msg.content}"
+                card = self._model_status_card(content)
+                picker_id = str(metadata.get("_feishu_model_picker_id") or "")
+                with self._model_picker_lock:
+                    picker = self._model_pickers.get(picker_id)
+                    if (
+                        picker is not None
+                        and picker.sender_id == msg.chat_id
+                        and picker.pending_index is not None
+                    ):
+                        index = picker.pending_index
+                        option = picker.options[index]
+                        if completed:
+                            picker.current = {
+                                "profile_id": str(option["profile_id"]),
+                                "model_id": str(option["model_id"]),
+                            }
+                        picker.pending = False
+                        picker.pending_index = None
+                        provider_index = next(
+                            (
+                                i
+                                for i, provider in enumerate(picker.providers)
+                                if provider["profile_id"] == option["profile_id"]
+                            ),
+                            None,
+                        )
+                        if provider_index is not None:
+                            option_indices = self._provider_option_indices(picker, provider_index)
+                            page = option_indices.index(index) // self._MODEL_PAGE_SIZE
+                            card = self._model_picker_card(
+                                picker_id, picker, provider_index, page, status=content
+                            )
                 patched = await loop.run_in_executor(
-                    None, self._patch_model_card_sync, picker_message_id, content
+                    None, self._patch_model_card_sync, picker_message_id, card
                 )
                 if not patched:
                     await loop.run_in_executor(
@@ -1693,16 +1866,47 @@ class FeishuChannel(BaseChannel):
                     )
                 return
 
-            picker_options = metadata.get("_feishu_model_options")
-            if (
-                isinstance(picker_options, list)
-                and picker_options
-                and msg.chat_id.startswith("ou_")
-            ):
+            raw_options = metadata.get("_feishu_model_options")
+            picker_options = (
+                [
+                    option
+                    for option in raw_options
+                    if isinstance(option, dict)
+                    and option.get("profile_id")
+                    and option.get("model_id")
+                    and option.get("model")
+                ]
+                if isinstance(raw_options, list)
+                else []
+            )
+            if picker_options and msg.chat_id.startswith("ou_"):
+                listed_providers = {
+                    str(row.get("profile_id")): row
+                    for row in (metadata.get("_feishu_model_providers") or [])
+                    if isinstance(row, dict) and row.get("profile_id")
+                }
+                providers: list[dict[str, Any]] = []
+                seen_profiles: set[str] = set()
+                for option in picker_options:
+                    profile_id = str(option["profile_id"])
+                    if profile_id in seen_profiles:
+                        continue
+                    seen_profiles.add(profile_id)
+                    listed = listed_providers.get(profile_id) or {}
+                    providers.append(
+                        {
+                            "profile_id": profile_id,
+                            "profile_name": listed.get("profile_name")
+                            or option.get("profile_name"),
+                            "provider_label": listed.get("provider_label")
+                            or option.get("provider_label"),
+                        }
+                    )
                 picker_id = uuid.uuid4().hex[:16]
                 picker = _ModelPicker(
                     sender_id=msg.chat_id,
-                    options=list(picker_options),
+                    providers=providers,
+                    options=picker_options,
                     current=dict(metadata.get("_feishu_model_current") or {}),
                     created_at=time.monotonic(),
                 )
@@ -1715,7 +1919,7 @@ class FeishuChannel(BaseChannel):
                     "open_id",
                     msg.chat_id,
                     "interactive",
-                    json.dumps(self._model_picker_card(picker_id, picker, 0), ensure_ascii=False),
+                    json.dumps(self._provider_picker_card(picker_id, picker), ensure_ascii=False),
                     reply_to_message_id,
                 )
                 if sent:
