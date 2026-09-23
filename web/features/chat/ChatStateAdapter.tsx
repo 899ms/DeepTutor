@@ -1563,6 +1563,7 @@ export function ChatStateAdapterProvider({
   // or ``nothing_to_regenerate``). Keyed by session entry key.
   const pendingRegenerateRef = useRef<Map<string, MessageItem>>(new Map());
   const pendingResendRef = useRef<Map<string, MessageItem>>(new Map());
+  const resolvingResendRef = useRef<Set<string>>(new Set());
   const traceCacheRef = useRef<TraceCache>(new TraceCache());
   const traceRequestsRef = useRef<Map<string, AbortController>>(new Map());
   // Forward-declared so ``handleRunnerEvent`` (created above
@@ -1786,39 +1787,41 @@ export function ChatStateAdapterProvider({
         // (the previous approach) re-downloaded, re-normalized, and
         // re-rendered the entire transcript after every turn, freezing
         // the tab for seconds on long conversations.
-        if (status === "completed") {
-          const doneMeta = event.metadata as {
-            user_message_id?: number;
-            assistant_message_id?: number;
-          } | null;
-          const assistantMessageId = doneMeta?.assistant_message_id ?? null;
+        const doneMeta = event.metadata as {
+          user_message_id?: number;
+          assistant_message_id?: number;
+        } | null;
+        const userMessageId = doneMeta?.user_message_id ?? null;
+        const assistantMessageId = doneMeta?.assistant_message_id ?? null;
+        // A failed turn can still have persisted its user row. Reconcile its
+        // id too, or Resend would treat it as an unsaved optimistic row and
+        // submit a duplicate user message on the next attempt.
+        if (assistantMessageId != null || userMessageId != null) {
+          dispatch({
+            type: "RECONCILE_TURN",
+            key: effectiveKey,
+            turnId: event.turn_id || null,
+            userMessageId,
+            assistantMessageId,
+          });
           if (assistantMessageId != null) {
-            dispatch({
-              type: "RECONCILE_TURN",
-              key: effectiveKey,
-              turnId: event.turn_id || null,
-              userMessageId: doneMeta?.user_message_id ?? null,
-              assistantMessageId,
-            });
-            // Compact the finished message's trace inside the reducer — never
-            // from ``stateRef``, which still lacks whatever arrived in the
-            // same burst as this ``done``.
+            // Compact the trace from the reducer, which sees the just-arrived
+            // events that stateRef has not observed yet.
             dispatch({
               type: "SETTLE_MESSAGE_TRACE",
               key: effectiveKey,
               messageId: assistantMessageId,
               turnId: event.turn_id || null,
             });
-          } else {
-            // Older backend without ids on ``done`` — fall back to the
-            // full session refetch.
-            const finishedSession = stateRef.current.sessions[effectiveKey];
-            const sessionId = finishedSession?.sessionId;
-            if (sessionId) {
-              loadSessionRef.current?.(sessionId).catch(() => {
-                /* non-fatal — local state remains usable */
-              });
-            }
+          }
+        } else if (status === "completed") {
+          // Older backend without ids on ``done`` — fall back to a refetch.
+          const finishedSession = stateRef.current.sessions[effectiveKey];
+          const sessionId = finishedSession?.sessionId;
+          if (sessionId) {
+            loadSessionRef.current?.(sessionId).catch(() => {
+              /* non-fatal — local state remains usable */
+            });
           }
         }
         return;
@@ -2678,7 +2681,7 @@ export function ChatStateAdapterProvider({
     });
   }, [sendThroughRunner]);
 
-  const resendLastMessage = useCallback(() => {
+  const resendLastMessage = useCallback(async () => {
     const currentState = stateRef.current;
     const key = currentState.selectedKey;
     if (!key) return;
@@ -2696,8 +2699,65 @@ export function ChatStateAdapterProvider({
       regenerateLastMessage();
       return;
     }
-    // The first attempt may have failed before the user row reached storage.
-    // Retry that request as a new turn, keeping the optimistic row visible.
+    // A dropped socket can hide a successfully persisted user row before its
+    // DONE ids reach this tab. Query the server before deciding whether this
+    // is a regenerate or a genuinely unsaved first attempt.
+    if (resolvingResendRef.current.has(key)) return;
+    resolvingResendRef.current.add(key);
+    let remote: Awaited<ReturnType<typeof getSession>>;
+    try {
+      remote = await getSession(session.sessionId);
+    } catch {
+      notify(i18n.t("Couldn't reach the server. Please check your connection and retry."), {
+        tone: "error",
+      });
+      return;
+    } finally {
+      resolvingResendRef.current.delete(key);
+    }
+    const live = stateRef.current;
+    if (
+      live.selectedKey !== key ||
+      live.sessions[key]?.isStreaming ||
+      !["failed", "rejected"].includes(live.sessions[key]?.status ?? "")
+    ) return;
+    if (remote.active_turns?.length) {
+      void loadSessionRef.current?.(session.sessionId);
+      return;
+    }
+    const knownIds = new Set(
+      session.messages
+        .filter((message) => typeof message.id === "number" && message.id > 0)
+        .map((message) => String(message.id)),
+    );
+    const newRows = (remote.messages ?? []).filter(
+      (message) => message.role !== "system" && !knownIds.has(String(message.id)),
+    );
+    const persistedUser = [...newRows].reverse().find((message) => message.role === "user");
+    if (persistedUser) {
+      if (
+        persistedUser.content !== lastUser.requestSnapshot.content ||
+        (persistedUser.parent_message_id ?? null) !== (lastUser.parentMessageId ?? null)
+      ) {
+        void loadSessionRef.current?.(session.sessionId);
+        return;
+      }
+      dispatch({
+        type: "RECONCILE_TURN",
+        key,
+        turnId: null,
+        userMessageId: persistedUser.id,
+        assistantMessageId: null,
+      });
+      regenerateLastMessage();
+      return;
+    }
+    if (newRows.length > 0) {
+      void loadSessionRef.current?.(session.sessionId);
+      return;
+    }
+    // The first attempt failed before the user row reached storage. Retry it
+    // as a new turn, keeping the existing optimistic row visible.
     const lastMessage = session.messages[session.messages.length - 1];
     if (lastMessage?.role === "assistant") {
       pendingResendRef.current.set(key, { ...lastMessage });
