@@ -147,9 +147,7 @@ def test_strip_markdown_drops_unpaired_dollars() -> None:
 
 
 def test_strip_markdown_verbalizes_fractions_roots_and_greek() -> None:
-    out = strip_markdown_for_speech(
-        r"Take $\frac{1}{2}$ of $\sqrt{x}$ and $\alpha + \beta$."
-    )
+    out = strip_markdown_for_speech(r"Take $\frac{1}{2}$ of $\sqrt{x}$ and $\alpha + \beta$.")
     assert "$" not in out
     assert "\\" not in out
     assert "{" not in out and "}" not in out
@@ -191,6 +189,15 @@ def test_strip_markdown_verbalizes_trig_and_inequality() -> None:
 def test_strip_markdown_leaves_windows_paths_alone() -> None:
     out = strip_markdown_for_speech(r"Saved at C:\Users\antmi\notes.md")
     assert r"C:\Users\antmi\notes.md" in out
+
+
+def test_strip_markdown_keeps_windows_paths_beside_loose_tex() -> None:
+    out = strip_markdown_for_speech(
+        r"Saved at C:\Users\alpha\notes.md and \\server\share\beta.txt; use \frac{1}{2}."
+    )
+    assert r"C:\Users\alpha\notes.md" in out
+    assert r"\\server\share\beta.txt" in out
+    assert "1 over 2" in out
 
 
 def test_strip_markdown_math_speak_off_keeps_inner_tex() -> None:

@@ -1045,9 +1045,7 @@ class RuntimeSettingsService:
             "entity_extract_max_gleaning": _coerce_clamped_int(
                 settings.get("entity_extract_max_gleaning"), 1, 0, 5
             ),
-            "llm_timeout": _coerce_clamped_int(
-                settings.get("llm_timeout"), 240, 60, 3600
-            ),
+            "llm_timeout": _coerce_clamped_int(settings.get("llm_timeout"), 240, 60, 3600),
             "llm_profile_id": _string(settings.get("llm_profile_id"))[:128],
             "llm_model_id": _string(settings.get("llm_model_id"))[:128],
         }

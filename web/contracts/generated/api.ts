@@ -6158,6 +6158,46 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/reading/materials/{material_id}/media": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * List Material Media
+     * @description The embedded-image index (name / locator / mime / size), empty if none.
+     */
+    readonly get: operations["list_material_media_api_reading_materials__material_id__media_get"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/reading/materials/{material_id}/media/{name}": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Get Material Media
+     * @description One embedded image's bytes, for the reader pane's media strip.
+     */
+    readonly get: operations["get_material_media_api_reading_materials__material_id__media__name__get"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/reading/materials/{material_id}/position": {
     readonly parameters: {
       readonly query?: never;
@@ -8024,6 +8064,30 @@ export interface paths {
      *     a per-session override on top of this value.
      */
     readonly put: operations["update_voice_autoplay_api_settings_voice_autoplay_put"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/settings/voice-math-speak": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    /**
+     * Update Voice Math Speak
+     * @description Persist whether TTS verbalizes LaTeX as spoken math.
+     *
+     *     A personal UI preference (any authenticated user). The voice router reads
+     *     this on each synthesis call; chat does not send a per-request override.
+     *     Dollar-sign delimiters are stripped even when this is off.
+     */
+    readonly put: operations["update_voice_math_speak_api_settings_voice_math_speak_put"];
     readonly post?: never;
     readonly delete?: never;
     readonly options?: never;
@@ -11283,6 +11347,8 @@ export interface components {
           readonly [key: string]: unknown;
         };
       } | null;
+      /** Image Caption */
+      readonly image_caption?: boolean | null;
     };
     /** DocumentResponse */
     readonly DocumentResponse: {
@@ -11798,7 +11864,7 @@ export interface components {
        * Language
        * @enum {string}
        */
-      readonly language: "zh" | "en";
+      readonly language: "en" | "zh" | "fr" | "uk";
     };
     /** LearnerOverrideRequest */
     readonly LearnerOverrideRequest: {
@@ -12758,6 +12824,18 @@ export interface components {
       readonly options: {
         readonly [key: string]: string;
       };
+      /**
+       * Origin Ref
+       * @default
+       */
+      readonly origin_ref: string;
+      /**
+       * Origin Type
+       * @default conversation
+       * @enum {string}
+       */
+      readonly origin_type:
+        "conversation" | "external_import" | "document_analysis";
       /** Practice */
       readonly practice?: {
         readonly [key: string]: unknown;
@@ -12805,7 +12883,10 @@ export interface components {
        * @default
        */
       readonly section_title: string;
-      /** Session Id */
+      /**
+       * Session Id
+       * @default
+       */
       readonly session_id: string;
       /**
        * Session Title
@@ -14563,9 +14644,9 @@ export interface components {
       /** Code Block Wrap Long Lines */
       readonly code_block_wrap_long_lines?: boolean | null;
       /** Language */
-      readonly language?: ("zh" | "en") | null;
+      readonly language?: ("en" | "zh" | "fr" | "uk") | null;
       /** Response Language */
-      readonly response_language?: ("zh" | "en") | null;
+      readonly response_language?: ("en" | "zh" | "fr" | "uk") | null;
       /** Sidebar Description */
       readonly sidebar_description?: string | null;
       readonly sidebar_nav_order?:
@@ -14837,6 +14918,18 @@ export interface components {
       readonly options?: {
         readonly [key: string]: string;
       } | null;
+      /**
+       * Origin Ref
+       * @default
+       */
+      readonly origin_ref: string;
+      /**
+       * Origin Type
+       * @default conversation
+       * @enum {string}
+       */
+      readonly origin_type:
+        "conversation" | "external_import" | "document_analysis";
       /** Quality */
       readonly quality?: number | null;
       /** Question */
@@ -14865,7 +14958,10 @@ export interface components {
        * @default
        */
       readonly section_title: string;
-      /** Session Id */
+      /**
+       * Session Id
+       * @default
+       */
       readonly session_id: string;
       /**
        * Source
@@ -15054,6 +15150,11 @@ export interface components {
     readonly VoiceAutoplayUpdate: {
       /** Voice Autoplay */
       readonly voice_autoplay: boolean;
+    };
+    /** VoiceMathSpeakUpdate */
+    readonly VoiceMathSpeakUpdate: {
+      /** Voice Math Speak */
+      readonly voice_math_speak: boolean;
     };
     /** VoicePreviewPayload */
     readonly VoicePreviewPayload: {
@@ -15686,6 +15787,8 @@ export type SchemaVideoLearningSettingsRequest =
   components["schemas"]["VideoLearningSettingsRequest"];
 export type SchemaVoiceAutoplayUpdate =
   components["schemas"]["VoiceAutoplayUpdate"];
+export type SchemaVoiceMathSpeakUpdate =
+  components["schemas"]["VoiceMathSpeakUpdate"];
 export type SchemaVoicePreviewPayload =
   components["schemas"]["VoicePreviewPayload"];
 export type SchemaWebSourceInfo = components["schemas"]["WebSourceInfo"];
@@ -28137,8 +28240,11 @@ export interface operations {
       readonly query: {
         /** @description Return 204 No Content instead of 404 when the entry is absent — used by the quiz viewer to probe not-yet-saved questions without logging noisy 404s. */
         readonly missing_ok?: boolean;
+        readonly origin_ref?: string;
+        readonly origin_type?:
+          "conversation" | "external_import" | "document_analysis";
         readonly question_id: string;
-        readonly session_id: string;
+        readonly session_id?: string;
         readonly turn_id?: string | null;
       };
       readonly header?: {
@@ -29426,6 +29532,79 @@ export interface operations {
           readonly "application/json": {
             readonly [key: string]: unknown;
           };
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly list_material_media_api_reading_materials__material_id__media_get: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly material_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": readonly {
+            readonly [key: string]: unknown;
+          }[];
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly get_material_media_api_reading_materials__material_id__media__name__get: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly material_id: string;
+        readonly name: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
         };
       };
       /** @description Validation Error */
@@ -33688,6 +33867,43 @@ export interface operations {
     readonly requestBody: {
       readonly content: {
         readonly "application/json": components["schemas"]["VoiceAutoplayUpdate"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly update_voice_math_speak_api_settings_voice_math_speak_put: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path?: never;
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["VoiceMathSpeakUpdate"];
       };
     };
     readonly responses: {

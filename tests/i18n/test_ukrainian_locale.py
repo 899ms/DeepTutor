@@ -29,7 +29,7 @@ from deeptutor.services.settings.interface_settings import _normalize_language
 WEB = pathlib.Path(__file__).resolve().parents[2] / "web"
 
 
-@pytest.mark.parametrize("raw", ["uk", "UK", " uk ", "ukrainian", "ua"])
+@pytest.mark.parametrize("raw", ["uk", "UK", " uk ", "ukrainian", "ua", "uk-UA"])
 def test_normalizer_accepts_ukrainian_spellings(raw: str) -> None:
     assert _normalize_language(raw) == "uk"
 
@@ -60,11 +60,12 @@ def test_judge_speaks_every_language_it_advertises() -> None:
     assert "українською" in _JUDGE_SYSTEM_PROMPTS["uk"]
 
 
-def test_web_locale_covers_every_english_key() -> None:
-    """A missing key renders as the raw key, not as English."""
-    en = json.loads((WEB / "locales/en/app.json").read_text(encoding="utf-8"))
+def test_web_locale_has_core_copy_and_english_fallback() -> None:
+    """Missing Ukrainian keys resolve through i18next's English bundle."""
     uk = json.loads((WEB / "locales/uk/app.json").read_text(encoding="utf-8"))
-    assert set(uk) == set(en)
+    assert {"language.ukrainian", "Start", "Model output language"} <= set(uk)
+    init = (WEB / "i18n/init.ts").read_text(encoding="utf-8")
+    assert 'fallbackLng: "en"' in init
 
 
 def test_web_locale_keeps_interpolation_placeholders() -> None:
@@ -73,21 +74,18 @@ def test_web_locale_keeps_interpolation_placeholders() -> None:
     en = json.loads((WEB / "locales/en/app.json").read_text(encoding="utf-8"))
     uk = json.loads((WEB / "locales/uk/app.json").read_text(encoding="utf-8"))
     pattern = re.compile(r"\{\{[^}]+\}\}")
-    lost = [
+    mismatches = [
         key
-        for key, value in en.items()
-        if isinstance(value, str)
-        for ph in pattern.findall(value)
-        if ph not in str(uk.get(key, ""))
+        for key in set(en) & set(uk)
+        if set(pattern.findall(en[key])) != set(pattern.findall(uk[key]))
     ]
-    assert lost == []
+    assert mismatches == []
 
 
 def test_frontend_language_list_is_the_single_source() -> None:
     """Pickers must map over APP_LANGUAGES rather than inline a literal."""
-    init = (WEB / "i18n/init.ts").read_text(encoding="utf-8")
-    assert "APP_LANGUAGES" in init
-    assert '{ code: "uk", labelKey: "language.ukrainian" }' in init
+    languages = (WEB / "i18n/languages.ts").read_text(encoding="utf-8")
+    assert '{ code: "uk", labelKey: "language.ukrainian" }' in languages
     overview = (WEB / "components/settings/SettingsOverview.tsx").read_text(encoding="utf-8")
     assert "APP_LANGUAGES.map" in overview
     assert '["en", "zh"]' not in overview

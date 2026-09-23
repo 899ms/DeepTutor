@@ -86,7 +86,7 @@ from deeptutor.services.llm import (
     supports_tools,  # noqa: F401  (re-exported for tests)
 )
 from deeptutor.services.llm.context_window import resolve_effective_context_window
-from deeptutor.services.prompt import get_prompt_manager
+from deeptutor.services.prompt import get_prompt_manager, normalize_language
 from deeptutor.services.prompt.lookup import prompt_text as _prompt_text
 from deeptutor.tools.builtin import PARTNER_BUILTIN_TOOL_NAMES
 
@@ -236,8 +236,9 @@ class AgenticLoopPipeline:
         event_stage: str = "responding",
         emit_result: bool = True,
     ) -> None:
-        _lang = language.lower()
-        self.language = "zh" if _lang.startswith("zh") else "fr" if _lang.startswith("fr") else "en"
+        # Prompt resources fall back to English; the requested output language
+        # must still reach the assembler's final language directive.
+        self.language = normalize_language(language)
         self.llm_config = get_llm_config()
         self.binding = getattr(self.llm_config, "binding", None) or "openai"
         self.model = getattr(self.llm_config, "model", None)

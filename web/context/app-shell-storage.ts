@@ -2,12 +2,13 @@
 
 import { browserStorage } from "@/shared/storage";
 import { activeWorkspaceId } from "@/lib/workspace-scope";
+import {
+  isAppLanguage,
+  normalizeLanguage as normalizeAppLanguage,
+  type AppLanguage,
+} from "@/i18n/languages";
 
-// Re-exported rather than redeclared: this file had its own copy of the
-// union, so widening the i18n one left this narrow and every call site
-// that crossed the two failed to compile.
-export type { AppLanguage } from "@/i18n/init";
-import type { AppLanguage } from "@/i18n/init";
+export type { AppLanguage } from "@/i18n/languages";
 
 export const ACTIVE_SESSION_STORAGE_KEY = "deeptutor.activeSessionId.tab";
 export const LANGUAGE_STORAGE_KEY = "deeptutor-language";
@@ -75,16 +76,14 @@ export const CODE_BLOCK_SETTINGS_EVENT = "deeptutor:code-block-settings";
 export function normalizeLanguage(
   value: string | null | undefined,
 ): AppLanguage {
-  return value === "zh" || value === "fr" || value === "uk" ? value : "en";
+  return normalizeAppLanguage(value);
 }
 
 export function resolveResponseLanguage(
   value: string | null | undefined,
   legacyLanguage: string | null | undefined = "en",
 ): AppLanguage {
-  return value === "zh" || value === "en" || value === "fr" || value === "uk"
-    ? value
-    : normalizeLanguage(legacyLanguage);
+  return isAppLanguage(value) ? value : normalizeLanguage(legacyLanguage);
 }
 
 export function readStoredLanguage(): AppLanguage {

@@ -76,21 +76,24 @@ async def test_ui_languages_are_persisted_independently(
 
 
 @pytest.mark.asyncio
-async def test_ui_settings_persist_french_independently(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
+@pytest.mark.parametrize("language", ["fr", "uk"])
+async def test_ui_settings_persist_supported_languages_independently(
+    monkeypatch: pytest.MonkeyPatch, tmp_path, language: str
 ) -> None:
     settings_file = tmp_path / "interface.json"
     monkeypatch.setattr(settings_router, "_settings_file", lambda: settings_file)
 
     response = await settings_router.update_ui_settings(
-        settings_router.UISettingsUpdate(theme="snow", language="fr", response_language="en")
+        settings_router.UISettingsUpdate(theme="snow", language=language, response_language="en")
     )
 
-    assert response["language"] == "fr"
+    assert response["language"] == language
     assert response["response_language"] == "en"
     persisted = settings_router.load_ui_settings()
-    assert persisted["language"] == "fr"
+    assert persisted["language"] == language
     assert persisted["response_language"] == "en"
+    assert (await settings_router.get_ui_settings())["language"] == language
+    assert settings_router.LanguageUpdate(language=language).language == language
 
 
 def test_ui_settings_update_rejects_unsupported_language() -> None:

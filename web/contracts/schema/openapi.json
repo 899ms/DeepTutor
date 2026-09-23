@@ -3094,6 +3094,17 @@
               }
             ],
             "title": "Engines"
+          },
+          "image_caption": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Caption"
           }
         },
         "title": "DocumentParsingUpdate",
@@ -4346,8 +4357,10 @@
         "properties": {
           "language": {
             "enum": [
+              "en",
               "zh",
-              "en"
+              "fr",
+              "uk"
             ],
             "title": "Language",
             "type": "string"
@@ -6103,6 +6116,21 @@
             "title": "Options",
             "type": "object"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "practice": {
             "anyOf": [
               {
@@ -6197,6 +6225,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -6243,7 +6272,6 @@
         },
         "required": [
           "id",
-          "session_id",
           "question",
           "created_at",
           "updated_at"
@@ -10072,8 +10100,10 @@
             "anyOf": [
               {
                 "enum": [
+                  "en",
                   "zh",
-                  "en"
+                  "fr",
+                  "uk"
                 ],
                 "type": "string"
               },
@@ -10087,8 +10117,10 @@
             "anyOf": [
               {
                 "enum": [
+                  "en",
                   "zh",
-                  "en"
+                  "fr",
+                  "uk"
                 ],
                 "type": "string"
               },
@@ -11015,6 +11047,21 @@
             ],
             "title": "Options"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "quality": {
             "anyOf": [
               {
@@ -11066,6 +11113,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -11108,7 +11156,6 @@
           }
         },
         "required": [
-          "session_id",
           "question_id",
           "question"
         ],
@@ -11418,6 +11465,19 @@
           "voice_autoplay"
         ],
         "title": "VoiceAutoplayUpdate",
+        "type": "object"
+      },
+      "VoiceMathSpeakUpdate": {
+        "properties": {
+          "voice_math_speak": {
+            "title": "Voice Math Speak",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "voice_math_speak"
+        ],
+        "title": "VoiceMathSpeakUpdate",
         "type": "object"
       },
       "VoicePreviewPayload": {
@@ -37271,9 +37331,35 @@
           {
             "in": "query",
             "name": "session_id",
-            "required": true,
+            "required": false,
             "schema": {
+              "default": "",
               "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_type",
+            "required": false,
+            "schema": {
+              "default": "conversation",
+              "enum": [
+                "conversation",
+                "external_import",
+                "document_analysis"
+              ],
+              "title": "Origin Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_ref",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Origin Ref",
               "type": "string"
             }
           },
@@ -40569,6 +40655,168 @@
         "summary": "Run Extension Action",
         "tags": [
           "reading-extensions"
+        ]
+      }
+    },
+    "/api/reading/materials/{material_id}/media": {
+      "get": {
+        "description": "The embedded-image index (name / locator / mime / size), empty if none.",
+        "operationId": "list_material_media_api_reading_materials__material_id__media_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response List Material Media Api Reading Materials  Material Id  Media Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Material Media",
+        "tags": [
+          "reading"
+        ]
+      }
+    },
+    "/api/reading/materials/{material_id}/media/{name}": {
+      "get": {
+        "description": "One embedded image's bytes, for the reader pane's media strip.",
+        "operationId": "get_material_media_api_reading_materials__material_id__media__name__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Material Media",
+        "tags": [
+          "reading"
         ]
       }
     },
@@ -49357,6 +49605,80 @@
           }
         },
         "summary": "Update Voice Autoplay",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/voice-math-speak": {
+      "put": {
+        "description": "Persist whether TTS verbalizes LaTeX as spoken math.\n\nA personal UI preference (any authenticated user). The voice router reads\nthis on each synthesis call; chat does not send a per-request override.\nDollar-sign delimiters are stripped even when this is off.",
+        "operationId": "update_voice_math_speak_api_settings_voice_math_speak_put",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceMathSpeakUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Voice Math Speak",
         "tags": [
           "settings"
         ]

@@ -50,3 +50,20 @@ def test_chat_renders_the_overridable_directive(language: str, marker: str) -> N
     assembler = LoopPromptAssembler(prompts={}, language=language)
     rendered = assembler.render([PromptBlock(name="Base", content="body")])
     assert marker in rendered
+
+
+@pytest.mark.parametrize(
+    ("language", "label"),
+    [("fr", "Français"), ("uk", "Українська")],
+)
+def test_loop_preserves_requested_output_language_with_english_prompt_assets(
+    language: str, label: str
+) -> None:
+    from deeptutor.agents.loop.pipeline import AgenticLoopPipeline
+    from deeptutor.agents.loop.prompt_blocks import PromptBlock
+
+    pipeline = AgenticLoopPipeline(language=language)
+    assert pipeline.language == language
+    assert pipeline._prompt_assembler.language == "en"
+    rendered = pipeline._prompt_assembler.render([PromptBlock(name="Base", content="body")])
+    assert label in rendered
