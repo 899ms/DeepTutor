@@ -11,21 +11,16 @@
  * worker file itself — a hard-coded `/pdf.worker.mjs` would have to be copied
  * into `public/` by a build step and would break the moment the version bumps.
  *
- * Both the library and its worker are taken from the `legacy` bundle on
- * purpose. `pdfjs-dist` ships two builds: the default one is neither
- * transpiled nor polyfilled — it targets the very latest engines and calls
- * recent ECMAScript methods such as `Map.prototype.getOrInsertComputed`
- * (ES2026; Chrome/Edge 145+, Firefox 144+) straight off the platform. In any
- * older engine, including a browser or embedded webview that is merely some
- * months behind, the worker dies with
+ * Both the library and its worker use the `legacy` build. The default worker
+ * calls newer ECMAScript methods such as `Map.prototype.getOrInsertComputed`
+ * that are absent in some supported browsers and embedded webviews. There,
+ * the worker can fail with
  *
  *   this._requestsByChunk.getOrInsertComputed is not a function
  *
  * and the document never renders — silently, since the failure happens in the
- * worker. The `legacy` bundle carries core-js and patches those methods in.
- * It costs roughly 100 KB more, paid only by users who actually open a PDF,
- * because this module is imported dynamically. Do not "optimise" this back to
- * the default build.
+ * worker. The legacy worker includes core-js polyfills for those methods. The
+ * extra code is loaded only when a user opens a PDF.
  */
 
 import type * as PdfjsModule from "pdfjs-dist";
@@ -43,9 +38,9 @@ export function loadPdfjs(): Promise<Pdfjs> {
   pending = (async () => {
     const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      // Must stay on the same bundle as the import above: mixing the legacy
-      // library with the default worker (or vice versa) fails with
-      // `The API version "a.b.c" does not match the Worker version "x.y.z"`.
+      // Use the legacy worker for its polyfills, matching the library build
+      // above. API/worker version mismatches arise from different pdfjs-dist
+      // releases, not from choosing different builds of the same release.
       pdfjs.GlobalWorkerOptions.workerSrc = new URL(
         "pdfjs-dist/legacy/build/pdf.worker.min.mjs",
         import.meta.url,
