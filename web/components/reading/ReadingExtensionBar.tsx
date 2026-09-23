@@ -194,6 +194,16 @@ export function ReadingExtensionBar({
           const disabled = busy === key || needsSelection;
           const builtInLabel = builtInActionLabel(extension.id, action.id);
           const primaryRank = primaryReadingActionRank(key);
+          const shortLabel =
+            ageMode === "early"
+              ? primaryRank === 0
+                ? "Listen"
+                : primaryRank === 1
+                  ? "Look up word"
+                  : primaryRank === 2
+                    ? "Quiz"
+                    : null
+              : null;
           const Icon =
             (ageMode !== "default" ? PRIMARY_ACTION_ICONS[primaryRank] : null) ?? Sparkles;
           const iconSize = primaryRank >= 0 && ageMode === "early" ? 18 : 14;
@@ -203,6 +213,11 @@ export function ReadingExtensionBar({
               type="button"
               disabled={disabled}
               title={needsSelection ? t("Select text in the document first.") : undefined}
+              aria-label={
+                shortLabel && builtInLabel
+                  ? `${t(shortLabel)} — ${t(builtInLabel)}`
+                  : undefined
+              }
               onClick={() => void run(extension, action)}
               className={readingActionClass(ageMode, key)}
             >
@@ -214,11 +229,11 @@ export function ReadingExtensionBar({
               <span
                 className={
                   primaryRank >= 0 && ageMode !== "default"
-                    ? "whitespace-nowrap text-center"
+                    ? "min-w-0 text-center max-sm:break-words sm:whitespace-nowrap"
                     : "truncate text-center"
                 }
               >
-                {builtInLabel ? t(builtInLabel) : action.label}
+                {shortLabel ? t(shortLabel) : builtInLabel ? t(builtInLabel) : action.label}
               </span>
             </button>
           );

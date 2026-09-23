@@ -49,11 +49,11 @@ const adultButton =
 
 const learnerButtons: Record<Exclude<ReadingAgeMode, "default">, string> = {
   early:
-    "min-h-14 min-w-[112px] w-max flex-none flex-col gap-0.5 rounded-[20px] border-2 px-3 py-1 text-xs font-bold leading-tight motion-safe:animate-[fade-in_220ms_ease-out_both] motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0.5",
+    "min-h-14 min-w-[112px] w-max flex-none flex-col gap-0.5 rounded-[20px] border-2 px-3 py-1 text-xs font-bold leading-tight max-sm:min-w-0 max-sm:w-0 max-sm:flex-1 max-sm:px-1 motion-safe:animate-[dt-reading-button-enter_220ms_ease-out_both] motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:translate-y-0.5",
   young:
-    "min-h-12 min-w-[100px] w-max flex-none rounded-2xl border-2 px-3 text-sm font-semibold motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[.98]",
+    "min-h-12 min-w-[100px] w-max flex-none rounded-2xl border-2 px-3 text-sm font-semibold max-sm:min-w-0 max-sm:w-0 max-sm:flex-1 max-sm:flex-col max-sm:gap-0.5 max-sm:px-1 motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 motion-safe:active:scale-[.98]",
   older:
-    "min-h-11 w-max flex-none rounded-xl border px-3 text-sm font-medium motion-safe:transition-transform motion-safe:active:scale-[.99]",
+    "min-h-11 w-max flex-none rounded-xl border px-3 text-sm font-medium max-sm:min-w-0 max-sm:w-0 max-sm:flex-1 max-sm:flex-col max-sm:gap-0.5 max-sm:px-1 motion-safe:transition-transform motion-safe:active:scale-[.99]",
 };
 
 const tones: Record<Exclude<ReadingAgeMode, "default">, Record<string, string>> = {

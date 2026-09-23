@@ -106,12 +106,11 @@ describe("host-owned Reading age presentation", () => {
       ),
     );
     const buttons = screen.getAllByRole("button");
-    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
-      "Read aloud",
-      "Explain vocabulary",
-      "Quiz me",
-      "Custom action",
-    ]);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(
+      age === 5
+        ? ["Listen", "Look up word", "Quiz", "Custom action"]
+        : ["Read aloud", "Explain vocabulary", "Quiz me", "Custom action"],
+    );
     for (const button of buttons.slice(0, 3)) {
       expect(button).toHaveClass(size);
       expect(button).toHaveAccessibleName();
@@ -120,6 +119,13 @@ describe("host-owned Reading age presentation", () => {
     expect(buttons[3]).not.toHaveClass(size);
     expect(buttons[1]).toBeDisabled();
     expect(onError).not.toHaveBeenCalled();
+    if (age === 5) {
+      expect(buttons.slice(0, 3).map((button) => button.getAttribute("aria-label"))).toEqual([
+        "Listen — Read aloud",
+        "Look up word — Explain vocabulary",
+        "Quiz — Quiz me",
+      ]);
+    }
   });
 
   it("keeps adult styling for a standard account and never fetches its learner profile", async () => {
@@ -144,7 +150,7 @@ describe("host-owned Reading age presentation", () => {
   it("keeps the action request and keyboard order free of age metadata", async () => {
     vi.mocked(getOwnLearnerProfile).mockResolvedValue({ age: 5 });
     render(<ReadingExtensionBar materialId="material-1" locator={4} onError={vi.fn()} />);
-    const readButton = await screen.findByRole("button", { name: "Read aloud" });
+    const readButton = await screen.findByRole("button", { name: /Listen.*Read aloud/ });
     await waitFor(() => expect(readButton.closest("[data-reading-presentation]")).toHaveAttribute("data-reading-presentation", "early"));
     expect(screen.getAllByRole("button")[0]).toBe(readButton);
     fireEvent.click(readButton);
