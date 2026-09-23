@@ -68,6 +68,12 @@ vi.mock("@/components/reading/PdfDocumentView", () => ({
   },
 }));
 
+// The workspace provider asks who the learner is; an adult reader is the
+// case under test, so there is no learner policy to find.
+vi.mock("@/lib/auth", () => ({
+  fetchAuthStatus: vi.fn(async () => null),
+}));
+
 vi.mock("@/components/reading/EpubDocumentView", () => ({
   EpubDocumentView: () => null,
 }));
@@ -110,6 +116,9 @@ vi.mock("@/context/ReadingContext", () => ({
 }));
 
 const { ReaderPane } = await import("@/components/reading/ReaderPane");
+const { ReadingActionsProvider } = await import(
+  "@/components/reading/ReadingActionsProvider"
+);
 
 describe("reading toolbar with a live selection", () => {
   beforeEach(() => {
@@ -158,7 +167,7 @@ describe("reading toolbar with a live selection", () => {
     expect(body.locator).toBe(4);
   });
 
-  it("keeps secondary mobile tools behind the reading more menu", async () => {
+  it("keeps secondary reading tools behind the more menu", async () => {
     const user = userEvent.setup();
     render(
       <ReaderPane
@@ -168,7 +177,12 @@ describe("reading toolbar with a live selection", () => {
     );
 
     const more = await screen.findByRole("button", { name: "More" });
-    expect(more.className).toContain("md:hidden");
+    // At every width now, not only on phones: history, auto-jump and export
+    // are settings and once-a-session actions, not toolbar buttons.
+    expect(more.className).not.toContain("md:hidden");
+    expect(
+      screen.queryByRole("button", { name: /Export annotated file/ }),
+    ).not.toBeInTheDocument();
     expect(more).toHaveAttribute("aria-haspopup", "menu");
     expect(
       screen.getByRole("button", { name: /Bookmark this page/ }),
@@ -190,5 +204,56 @@ describe("reading toolbar with a live selection", () => {
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menu", { name: "More" })).not.toBeInTheDocument();
     expect(more).toHaveFocus();
+  });
+
+  /**
+   * Inside a workspace the same action is on the selection popover, and the
+   * strip of chips above the page is gone: one place to start it, and the
+   * answer goes to the companion column rather than a band over the page.
+   */
+  it("runs selection actions from the popover inside a workspace", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReadingActionsProvider materialId="m1" locator={1}>
+        <ReaderPane onClose={() => undefined} />
+      </ReadingActionsProvider>,
+    );
+
+    await waitFor(() => expect(view.select).not.toBeNull());
+    act(() =>
+      view.select?.({
+        locator: 4,
+        quote: "the slope of the line",
+        rects: [],
+        anchor: { x: 100, y: 200 },
+      }),
+    );
+
+    const popover = await screen.findByRole("dialog", {
+      name: "Annotate selection",
+    });
+    const translate = await within(popover).findByRole("button", {
+      name: "Translate to Chinese",
+    });
+    expect(translate).toHaveTextContent("Translate");
+    expect(
+      within(popover).getByRole("button", { name: "Ask about this" }),
+    ).toBeVisible();
+    await user.click(translate);
+
+    await waitFor(() => expect(api.runReadingExtension).toHaveBeenCalled());
+    const [, extensionId, actionId, body] = api.runReadingExtension.mock.calls[0];
+    expect(extensionId).toBe("translation");
+    expect(actionId).toBe("translate_zh");
+    expect(body.selection).toBe("the slope of the line");
+    expect(body.locator).toBe(4);
+    // The popover closes once the action is on its way.
+    expect(
+      screen.queryByRole("dialog", { name: "Annotate selection" }),
+    ).not.toBeInTheDocument();
+    // …and the strip that used to carry the same button is not rendered.
+    expect(
+      screen.queryAllByRole("button", { name: "Translate to Chinese" }),
+    ).toHaveLength(0);
   });
 });

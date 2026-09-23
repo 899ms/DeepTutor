@@ -199,6 +199,34 @@
     transform: translateY(-1px);
   }
 
+  /* Collection folder tints (Immersive Reading). These are user-picked
+     category colours rather than theme accents, so they sit outside the
+     palettes: one set for light canvases, a softer one for dark ones. */
+  :root {
+    --folder-default: #a8a29e;
+    --folder-blue: #4f86f7;
+    --folder-teal: #1fb5a8;
+    --folder-green: #43b05c;
+    --folder-amber: #eaa221;
+    --folder-orange: #f07b3f;
+    --folder-rose: #e8577a;
+    --folder-violet: #8e6cf0;
+    --folder-slate: #6b7a90;
+  }
+
+  .dark,
+  .theme-glass {
+    --folder-default: #8a847f;
+    --folder-blue: #5b8def;
+    --folder-teal: #2aa79c;
+    --folder-green: #4aa35f;
+    --folder-amber: #d69a2d;
+    --folder-orange: #dd7a45;
+    --folder-rose: #d65f7f;
+    --folder-violet: #8b72e6;
+    --folder-slate: #74839a;
+  }
+
   * {
     @apply border-[color:var(--border)];
     scrollbar-width: thin;

@@ -23,15 +23,15 @@
 import dynamic from "next/dynamic";
 import {
   BookmarkPlus,
-  ChevronDown,
   ChevronLeft,
   Download,
   Highlighter,
-  History,
   Link2,
   ListOrdered,
   MoreHorizontal,
   PanelRight,
+  Sparkles,
+  SquarePen,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -63,9 +63,20 @@ import {
   type ReadingConversation,
   type ReadingLibraryMaterial,
 } from "@/lib/reading-workspace-api";
-import { ConversationMenu } from "./dialogs";
+import { READER_ASK_EVENT } from "@/components/reading/ReaderPane";
+import {
+  focusReadingComposer,
+  useReadingActions,
+  type ReadingActionCard,
+  type ReadingActionEntry,
+} from "@/components/reading/reading-actions-context";
+import { ReadingActionCards } from "./ReadingActionCards";
 import { ReadingComposer } from "./ReadingComposer";
 import { CompanionWelcome, MenuItem } from "./WorkspaceChrome";
+import {
+  useWorkspaceMenuSection,
+  type WorkspaceMenuItem,
+} from "@/components/reading/workspace-menu-context";
 
 const SaveToNotebookModal = dynamic(
   () => import("@/components/notebook/SaveToNotebookModal"),
@@ -75,20 +86,29 @@ const SaveToNotebookModal = dynamic(
 /** Which face the header's overflow menu is showing. */
 type MenuView = "actions" | "turns";
 
+/** Spoken from the workspace header, not listed as a tool. */
+const READ_ALOUD_KEY = "read_aloud:read";
+
+// The TW3 `bg-[var(--x)]/NN` form compiles to nothing, which is why these
+// header buttons never showed a pressed state; color-mix is what works.
+const HEADER_BUTTON_ACTIVE =
+  "bg-[color-mix(in_srgb,var(--primary)_10%,transparent)] text-[var(--primary)]";
+const HEADER_BUTTON_IDLE =
+  "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]";
+
+const COMPOSER_FADE =
+  "linear-gradient(to bottom, #000 calc(100% - 32px), transparent)";
+
 export function ReadingCompanion({
   workspaceId,
   material,
-  conversations,
   activeConversation,
   linkedSessionIds,
   activeLocator,
   selection,
   onClearSelection,
   onOpenLinker,
-  onSelectConversation,
   onNewConversation,
-  onRenameConversation,
-  onDeleteConversation,
   onQuickPrompt,
   prefillInputRef,
   onClose,
@@ -96,7 +116,6 @@ export function ReadingCompanion({
   workspaceId: string;
   /** The material currently open in the reader, if any. */
   material: ReadingLibraryMaterial | null;
-  conversations: ReadingConversation[];
   activeConversation: ReadingConversation | null;
   /** Conversations pinned as extra context for every turn. */
   linkedSessionIds: string[];
@@ -105,10 +124,11 @@ export function ReadingCompanion({
   selection: { quote: string; locator: number } | null;
   onClearSelection: () => void;
   onOpenLinker: () => void;
-  onSelectConversation: (sessionId: string) => void | Promise<void>;
+  /**
+   * Past conversations live in the app sidebar with every other one; the
+   * companion only starts a fresh thread.
+   */
   onNewConversation: () => void;
-  onRenameConversation: (conversation: ReadingConversation) => void;
-  onDeleteConversation: (conversation: ReadingConversation) => void;
   /** Send a guided one-click prompt without touching the composer's text. */
   onQuickPrompt: (prompt: string) => void;
   prefillInputRef: React.MutableRefObject<((text: string) => void) | null>;
@@ -127,7 +147,8 @@ export function ReadingCompanion({
   } = useChatStateAdapter();
   const confirmResearchOutline = useResearchOutlineContinuation();
 
-  const [showSessions, setShowSessions] = useState(false);
+  const readingActions = useReadingActions();
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<MenuView>("actions");
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -150,6 +171,20 @@ export function ReadingCompanion({
     setMenuView("actions");
   }, []);
 
+  // The header menus close on a click-away catcher; Escape has to be wired
+  // separately, or a keyboard user who opened one has no way back out.
+  useEffect(() => {
+    if (!toolsOpen && !menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setToolsOpen(false);
+      closeMenu();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [closeMenu, menuOpen, toolsOpen]);
+
   const handleWelcomeAction = useCallback(
     (prompt: string) => {
       if (workspaceActionNeedsConfiguration(state.activeCapability)) {
@@ -160,6 +195,63 @@ export function ReadingCompanion({
     },
     [onQuickPrompt, prefillInputRef, state.activeCapability],
   );
+
+  /* ── Reading tools ───────────────────────────────────────────────────
+     The same actions the selection popover offers, for when the learner
+     starts from here: page-wide ones (a quiz on this page) always, and the
+     passage ones against the passage already quoted above the composer. */
+  const toolEntries = useMemo(
+    () =>
+      (readingActions?.actions ?? []).filter(
+        (entry) => entry.key !== READ_ALOUD_KEY,
+      ),
+    [readingActions?.actions],
+  );
+  const runTool = useCallback(
+    (entry: ReadingActionEntry) => {
+      if (!readingActions) return;
+      if (entry.needsSelection) {
+        if (!selection) return;
+        void readingActions.run(entry, {
+          locator: selection.locator,
+          selection: selection.quote,
+        });
+        return;
+      }
+      void readingActions.run(entry, { locator: activeLocator });
+    },
+    [activeLocator, readingActions, selection],
+  );
+  const pageTools = useMemo(
+    () =>
+      toolEntries
+        .filter((entry) => !entry.needsSelection)
+        .map((entry) => ({
+          key: entry.key,
+          label: entry.label,
+          onClick: () => runTool(entry),
+        })),
+    [runTool, toolEntries],
+  );
+
+  // "Ask a follow-up" on a card: the passage it answered becomes the quoted
+  // context of the next question, exactly as "Ask about this" does from the
+  // document. A card with no passage (a quiz on the page) just focuses the box.
+  const followUpCard = useCallback(
+    (card: ReadingActionCard) => {
+      if (card.quote) {
+        window.dispatchEvent(
+          new CustomEvent(READER_ASK_EVENT, {
+            detail: { quote: card.quote, locator: card.locator },
+          }),
+        );
+        return;
+      }
+      focusReadingComposer();
+    },
+    [],
+  );
+  const hasCards = Boolean(readingActions?.cards.length);
 
   /* ── Transcript scrolling ────────────────────────────────────────────
      The pin-to-bottom hook /chat uses. The companion used to be a bare
@@ -297,6 +389,57 @@ export function ReadingCompanion({
     [state.messages],
   );
 
+  const downloadMarkdown = useCallback(() => {
+    if (!state.messages.length) return;
+    downloadChatMarkdown(state.messages, {
+      title:
+        activeConversation?.title ||
+        material?.title ||
+        t("Reading conversation"),
+    });
+  }, [activeConversation?.title, material?.title, state.messages, t]);
+
+  // Handed to the workspace's single ⋯. Only the question list stays here: it
+  // is a long, scrolling list, and it belongs over the conversation it jumps
+  // through rather than under the top bar's corner.
+  const menuItems = useMemo<WorkspaceMenuItem[]>(() => {
+    const items: WorkspaceMenuItem[] = [
+      {
+        key: "save",
+        icon: BookmarkPlus,
+        label: t("Save to Notebook"),
+        disabled: !chatSavePayload,
+        onSelect: () => setShowSaveModal(true),
+      },
+      {
+        key: "markdown",
+        icon: Download,
+        label: t("Download Markdown"),
+        disabled: !hasMessages,
+        onSelect: downloadMarkdown,
+      },
+      {
+        key: "activity",
+        icon: PanelRight,
+        label: t("Activity"),
+        onSelect: () => setViewerOpen(true),
+      },
+    ];
+    if (chatOutline.length > 1) {
+      items.push({
+        key: "turns",
+        icon: ListOrdered,
+        label: t("Jump to a question"),
+        onSelect: () => {
+          setMenuView("turns");
+          setMenuOpen(true);
+        },
+      });
+    }
+    return items;
+  }, [chatOutline.length, chatSavePayload, downloadMarkdown, hasMessages, t]);
+  const menuHosted = useWorkspaceMenuSection("conversation", menuItems);
+
   const copyAssistantMessage = useCallback(
     (content: string) => copyText(content),
     [],
@@ -305,17 +448,28 @@ export function ReadingCompanion({
   return (
     <aside className="absolute inset-y-0 right-0 z-30 flex w-[min(420px,100%)] min-h-0 min-w-0 flex-col bg-[var(--card)] shadow-[-18px_0_42px_rgba(0,0,0,.12)] dark:bg-[var(--background)] xl:static xl:w-auto xl:shadow-none">
       <div className="relative flex h-11 shrink-0 items-center gap-2.5 border-b border-[var(--border)] px-4 dark:border-[var(--border)]">
-        <div className="min-w-0 flex-1">
-          <p className="font-serif text-[13px] font-semibold leading-tight text-[var(--foreground)]">
-            {t("Reading companion")}
-          </p>
-          {/* A material's own title, not a label: upper-casing it would
-              rewrite a book name and destroy a CJK one. */}
-          <p className="truncate text-[10.5px] text-[var(--muted-foreground)]">
-            {material?.title || t("Grounded in your materials")}
-          </p>
-        </div>
+        {/* No material subtitle: the document's name is already in the tab
+            and the reader's own header, and a third copy only pushed the
+            panel's controls into a truncated corner. */}
+        <p className="min-w-0 flex-1 truncate font-serif text-[13.5px] font-semibold leading-tight text-[var(--foreground)]">
+          {t("Reading companion")}
+        </p>
         <div className="flex shrink-0 items-center gap-0.5">
+          {toolEntries.length > 0 && (
+            <Tooltip label={t("Reading tools")} suppressed={toolsOpen}>
+              <button
+                type="button"
+                onClick={() => setToolsOpen((current) => !current)}
+                aria-label={t("Reading tools")}
+                aria-expanded={toolsOpen}
+                className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-90 ${
+                  toolsOpen ? HEADER_BUTTON_ACTIVE : HEADER_BUTTON_IDLE
+                }`}
+              >
+                <Sparkles size={14} strokeWidth={1.7} />
+              </button>
+            </Tooltip>
+          )}
           <Tooltip
             label={
               activeConversation
@@ -332,8 +486,8 @@ export function ReadingCompanion({
               aria-label={t("Link earlier reading conversations")}
               className={`relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${
                 linkedSessionIds.length
-                  ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]/55 hover:text-[var(--foreground)]"
+                  ? HEADER_BUTTON_ACTIVE
+                  : HEADER_BUTTON_IDLE
               }`}
             >
               <Link2 size={14} strokeWidth={1.7} />
@@ -344,49 +498,74 @@ export function ReadingCompanion({
               )}
             </button>
           </Tooltip>
-          <Tooltip label={t("Reading conversations")} suppressed={showSessions}>
+          <Tooltip label={t("New conversation")}>
             <button
               type="button"
-              onClick={() => setShowSessions((current) => !current)}
-              aria-label={t("Reading conversations")}
-              aria-expanded={showSessions}
-              className={`inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[10px] font-medium transition-[background-color,color,transform] duration-150 active:scale-95 ${
-                showSessions
-                  ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]/55 hover:text-[var(--foreground)]"
-              }`}
+              onClick={onNewConversation}
+              disabled={!activeConversation}
+              aria-label={t("New conversation")}
+              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent ${HEADER_BUTTON_IDLE}`}
             >
-              <History size={13} strokeWidth={1.7} />
-              <ChevronDown
-                size={10}
-                className={`transition-transform duration-150 ${showSessions ? "rotate-180" : ""}`}
-              />
+              <SquarePen size={14} strokeWidth={1.7} />
             </button>
           </Tooltip>
-          <Tooltip label={t("Conversation actions")} suppressed={menuOpen}>
-            <button
-              type="button"
-              onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
-              aria-label={t("Conversation actions")}
-              aria-expanded={menuOpen}
-              className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-90 ${
-                menuOpen
-                  ? "bg-[var(--primary)]/10 text-[var(--primary)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]/55 hover:text-[var(--foreground)]"
-              }`}
-            >
-              <MoreHorizontal size={14} strokeWidth={1.7} />
-            </button>
-          </Tooltip>
+          {!menuHosted && (
+            <Tooltip label={t("Conversation actions")} suppressed={menuOpen}>
+              <button
+                type="button"
+                onClick={() => (menuOpen ? closeMenu() : setMenuOpen(true))}
+                aria-label={t("Conversation actions")}
+                aria-expanded={menuOpen}
+                className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-[background-color,color,transform] duration-150 active:scale-90 ${
+                  menuOpen ? HEADER_BUTTON_ACTIVE : HEADER_BUTTON_IDLE
+                }`}
+              >
+                <MoreHorizontal size={14} strokeWidth={1.7} />
+              </button>
+            </Tooltip>
+          )}
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--muted)]/55 hover:text-[var(--foreground)] active:scale-90 xl:hidden"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[var(--muted-foreground)] transition-[background-color,color,transform] duration-150 hover:bg-[var(--muted)] hover:text-[var(--foreground)] active:scale-90 xl:hidden"
           aria-label={t("Close reading companion")}
         >
           <X size={14} strokeWidth={1.7} />
         </button>
+
+        {toolsOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setToolsOpen(false)}
+            />
+            <div className="absolute right-2 top-10 z-50 w-64 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1.5 text-[12px] shadow-[0_20px_50px_rgba(0,0,0,.18)] dark:border-[var(--border)] dark:bg-[var(--popover)]">
+              {toolEntries.map((entry) => {
+                const blocked = entry.needsSelection && !selection;
+                return (
+                  <MenuItem
+                    key={entry.key}
+                    icon={Sparkles}
+                    label={entry.label}
+                    disabled={blocked || readingActions?.busyKey === entry.key}
+                    hint={
+                      entry.needsSelection
+                        ? blocked
+                          ? t("Select text in the document first.")
+                          : t("On the quoted passage")
+                        : t("On the page in view")
+                    }
+                    onClick={() => {
+                      setToolsOpen(false);
+                      runTool(entry);
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </>
+        )}
 
         {menuOpen && (
           <>
@@ -394,7 +573,7 @@ export function ReadingCompanion({
                 handler: the items are buttons, and blur fires before their
                 click lands. */}
             <div className="fixed inset-0 z-40" onClick={closeMenu} />
-            <div className="absolute right-2 top-10 z-50 w-60 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1.5 text-[11px] shadow-[0_20px_50px_rgba(0,0,0,.18)] dark:border-[var(--border)] dark:bg-[var(--popover)]">
+            <div className="absolute right-2 top-10 z-50 w-60 rounded-2xl border border-[var(--border)] bg-[var(--card)] p-1.5 text-[12px] shadow-[0_20px_50px_rgba(0,0,0,.18)] dark:border-[var(--border)] dark:bg-[var(--popover)]">
               {menuView === "actions" ? (
                 <>
                   <MenuItem
@@ -410,13 +589,7 @@ export function ReadingCompanion({
                     label={t("Download Markdown")}
                     onClick={() => {
                       closeMenu();
-                      if (!state.messages.length) return;
-                      downloadChatMarkdown(state.messages, {
-                        title:
-                          activeConversation?.title ||
-                          material?.title ||
-                          t("Reading conversation"),
-                      });
+                      downloadMarkdown();
                     }}
                   />
                   <MenuItem
@@ -470,29 +643,6 @@ export function ReadingCompanion({
             </div>
           </>
         )}
-
-        {showSessions && (
-          <ConversationMenu
-            conversations={conversations}
-            activeSessionId={state.sessionId}
-            onSelect={async (sessionId) => {
-              setShowSessions(false);
-              await onSelectConversation(sessionId);
-            }}
-            onNew={() => {
-              setShowSessions(false);
-              onNewConversation();
-            }}
-            onRename={(row) => {
-              setShowSessions(false);
-              onRenameConversation(row);
-            }}
-            onDelete={(row) => {
-              setShowSessions(false);
-              onDeleteConversation(row);
-            }}
-          />
-        )}
       </div>
 
       <div
@@ -525,7 +675,14 @@ export function ReadingCompanion({
             handleMessagesScroll();
           }
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 [scrollbar-gutter:stable]"
+        // No rule above the composer: the last lines fade out instead, so the
+        // composer floats over the conversation as it does on /chat. The
+        // bottom padding keeps that fade over empty space, not the last line.
+        className="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-4 [scrollbar-gutter:stable]"
+        style={{
+          WebkitMaskImage: COMPOSER_FADE,
+          maskImage: COMPOSER_FADE,
+        }}
       >
         {state.messages.length ? (
           <ChatMessageList
@@ -554,19 +711,25 @@ export function ReadingCompanion({
             }}
             showModeBadge={false}
           />
-        ) : (
+        ) : hasCards ? null : (
           <CompanionWelcome
             title={material?.title ?? ""}
             onAction={handleWelcomeAction}
             suggestions={openers}
+            tools={material ? pageTools : []}
           />
         )}
+        <ReadingActionCards
+          sessionId={state.sessionId}
+          onFollowUp={followUpCard}
+        />
         <div ref={messagesEndRef} className="h-px" />
       </div>
 
       <div
         ref={composerBoxRef}
-        className="shrink-0 border-t border-[var(--border)] bg-[var(--card)] pt-3 dark:border-[var(--border)] dark:bg-[var(--secondary)]"
+        data-reading-composer=""
+        className="shrink-0 pt-1"
       >
         {selection && (
           <div className="mx-4 mb-2 flex items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-2.5 py-2 dark:border-[var(--border)] dark:bg-[var(--card)]">
@@ -574,23 +737,26 @@ export function ReadingCompanion({
               size={12}
               className="mt-0.5 shrink-0 text-[var(--primary)]"
             />
-            <p className="line-clamp-2 min-w-0 flex-1 text-[10.5px] leading-relaxed text-[var(--muted-foreground)]">
+            <p className="line-clamp-2 min-w-0 flex-1 text-[11.5px] leading-relaxed text-[var(--muted-foreground)]">
               {selection.quote}
             </p>
             <button
               type="button"
+              aria-label={t("Remove quoted passage")}
+              title={t("Remove quoted passage")}
+              className="shrink-0 rounded p-0.5 text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
               onClick={() => {
                 onClearSelection();
                 setReadingViewport({ selection: "" });
               }}
             >
-              <X size={10} />
+              <X size={11} />
             </button>
           </div>
         )}
         {!!linkedSessionIds.length && (
-          <div className="mx-4 mb-2 flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
-            <Link2 size={10} />
+          <div className="mx-4 mb-2 flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+            <Link2 size={11} />
             {t("Using {{count}} linked conversations as context", {
               count: linkedSessionIds.length,
             })}

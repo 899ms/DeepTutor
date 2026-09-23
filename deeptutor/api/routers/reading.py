@@ -361,12 +361,14 @@ class UrlImportRequest(BaseModel):
 class WorkspaceCreateRequest(BaseModel):
     title: str = Field(default="Untitled collection", max_length=300)
     description: str = Field(default="", max_length=2000)
+    color: str = Field(default="", max_length=32)
     material_ids: list[str] = Field(default_factory=list, max_length=100)
 
 
 class WorkspaceUpdateRequest(BaseModel):
     title: str | None = Field(default=None, max_length=300)
     description: str | None = Field(default=None, max_length=2000)
+    color: str | None = Field(default=None, max_length=32)
 
 
 class WorkspaceMaterialRequest(BaseModel):
@@ -614,6 +616,7 @@ async def create_workspace(payload: WorkspaceCreateRequest) -> dict[str, Any]:
             payload.title,
             payload.material_ids,
             description=payload.description,
+            color=payload.color,
         )
         return {"workspace": row.to_dict()}
     except Exception as exc:
@@ -670,6 +673,7 @@ async def update_workspace(workspace_id: str, payload: WorkspaceUpdateRequest) -
             workspace_id,
             title=payload.title,
             description=payload.description,
+            color=payload.color,
         )
         return {"workspace": row.to_dict()}
     except Exception as exc:

@@ -896,3 +896,16 @@ def test_deleting_a_material_reports_where_it_was_used(client: TestClient) -> No
     assert [row["title"] for row in removed["removed_from"]] == ["Close reading"]
     # The sibling still reads the same extracted content, so it survives.
     assert client.get(f"/api/reading/materials/{second_id}/units/1").json()["text"]
+
+
+def test_collection_color_round_trips_through_create_and_patch(client: TestClient) -> None:
+    created = client.post(
+        "/api/reading/workspaces", json={"title": "Close reading", "color": "violet"}
+    ).json()["workspace"]
+    assert created["color"] == "violet"
+
+    patched = client.patch(
+        f"/api/reading/workspaces/{created['workspace_id']}",
+        json={"title": "Slow reading", "color": "green"},
+    ).json()["workspace"]
+    assert (patched["title"], patched["color"]) == ("Slow reading", "green")

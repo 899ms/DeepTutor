@@ -1,7 +1,7 @@
 "use client";
 
 import { scopedUrl } from "@/lib/workspace-scope";
-import { READING_HOME, readingSessionIdFromPath } from "@/lib/learning-routes";
+import { READING_HOME, readingFolderRoute, readingSessionIdFromPath } from "@/lib/learning-routes";
 
 import { browserStorage } from "@/shared/storage";
 
@@ -15,16 +15,11 @@ import {
 } from "next/navigation";
 import {
   ArrowLeft,
-  ChevronDown,
   CircleAlert,
   Expand,
   GraduationCap,
-  Highlighter,
-  History,
-  Link2,
   Loader2,
   Minimize2,
-  MoreHorizontal,
   NotebookPen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -32,17 +27,17 @@ import {
   PanelRightOpen,
   Plus,
   StickyNote,
-  X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { JumpRequest } from "@/components/reading/PdfDocumentView";
 import { READER_ASK_EVENT, ReaderPane } from "@/components/reading/ReaderPane";
+import { ReadingActionsProvider } from "@/components/reading/ReadingActionsProvider";
+import { focusReadingComposer } from "@/components/reading/reading-actions-context";
 import { useChatStateAdapter } from "@/features/chat/ChatStateAdapter";
 import type { ReaderHeading } from "@/lib/reading-outline";
 import { setReadingViewport } from "@/lib/reading-turn-state";
-import { listNotebooks, type NotebookSummary } from "@/lib/notebook-api";
 import { consumePendingPrompt } from "@/lib/pending-prompt";
 import {
   getMaterial,
@@ -63,26 +58,28 @@ import {
   listReadingConversations,
   retryReadingMaterial,
   unlinkReadingConversation,
-  type ReadingConversation,
   type ReadingLibraryMaterial,
 } from "@/lib/reading-workspace-api";
 import { SourceNavigator } from "./SourceNavigator";
 import {
-  CompanionWelcome,
   EmptyWorkspace,
   MaterialFailure,
   MaterialProcessing,
-  MenuItem,
 } from "./WorkspaceChrome";
 import {
   ConversationLinkDialog,
-  ConversationMenu,
   NotebookCaptureDialog,
   OrganizedNotesDialog,
   WorkspaceConfirmDialog,
   WorkspaceValueDialog,
 } from "./dialogs";
 import { ReadingCompanion } from "./ReadingCompanion";
+import { ReadAloudButton } from "./ReadAloudButton";
+import {
+  WorkspaceMenuContext,
+  type WorkspaceMenuItem,
+} from "@/components/reading/workspace-menu-context";
+import { WorkspaceMenu, useWorkspaceMenuHost } from "./WorkspaceMenu";
 import { useReadingWorkspace } from "./useReadingWorkspace";
 import { useReadingLearningMode } from "./useLearningMode";
 
@@ -159,9 +156,6 @@ export function ReadingWorkspacePage() {
     switchMaterial,
     removeMaterial,
     newConversation,
-    openConversation,
-    renameConversation,
-    deleteConversation,
     organizeNotes,
     buildMasteryPath,
     renameWorkspace,
@@ -214,15 +208,34 @@ export function ReadingWorkspacePage() {
   const [showLinker, setShowLinker] = useState(false);
   const [showNotebook, setShowNotebook] = useState(false);
   const [showAddSource, setShowAddSource] = useState(false);
-  const [showActions, setShowActions] = useState(false);
+  const { host: menuHost, sections: menuSections } = useWorkspaceMenuHost();
   const [showRename, setShowRename] = useState(false);
   const [showMastery, setShowMastery] = useState(false);
+  const collectionMenu = useMemo<WorkspaceMenuItem[]>(
+    () => [
+      {
+        key: "organize",
+        icon: StickyNote,
+        label: t("Organize notes"),
+        onSelect: () => void organizeNotes(),
+      },
+      {
+        key: "notebook",
+        icon: NotebookPen,
+        label: t("Send to Notebook"),
+        onSelect: () => setShowNotebook(true),
+      },
+      {
+        key: "mastery",
+        icon: GraduationCap,
+        label: t("Build Mastery Path"),
+        onSelect: () => setShowMastery(true),
+      },
+    ],
+    [organizeNotes, t],
+  );
   const [removeTarget, setRemoveTarget] =
     useState<ReadingLibraryMaterial | null>(null);
-  const [renameConversationTarget, setRenameConversationTarget] =
-    useState<ReadingConversation | null>(null);
-  const [deleteConversationTarget, setDeleteConversationTarget] =
-    useState<ReadingConversation | null>(null);
   const {
     closeLearning,
     companionOpen,
@@ -255,6 +268,29 @@ export function ReadingWorkspacePage() {
     return () => window.cancelAnimationFrame(frame);
   }, [setCompanionOpen]);
 
+  // The two panels are independent wherever at least one of them docks:
+  // opening one used to close the other at every width, so a learner could
+  // never see the outline and the conversation together. Below `lg` both are
+  // sheets over the document, and two sheets at once is just a mess.
+  const toggleNavigator = useCallback(
+    (open: boolean) => {
+      if (open && !window.matchMedia("(min-width: 1024px)").matches) {
+        setCompanionOpen(false);
+      }
+      setNavigatorOpen(open);
+    },
+    [setCompanionOpen, setNavigatorOpen],
+  );
+  const toggleCompanion = useCallback(
+    (open: boolean) => {
+      if (open && !window.matchMedia("(min-width: 1024px)").matches) {
+        setNavigatorOpen(false);
+      }
+      setCompanionOpen(open);
+    },
+    [setCompanionOpen, setNavigatorOpen],
+  );
+
   useEffect(() => {
     const onAsk = (event: Event) => {
       const detail = (event as CustomEvent<ReaderAskDetail>).detail;
@@ -265,12 +301,15 @@ export function ReadingWorkspacePage() {
         locator: Number(detail.locator || activeLocator),
         selection: quote,
       });
-      setCompanionOpen(true);
-      prefillInputRef.current?.("");
+      toggleCompanion(true);
+      // Focus, not `prefillInputRef("")`: that one *sets* the text, and
+      // "Ask about this" used to wipe whatever the learner had half-typed.
+      // A frame later, because a closed companion is not mounted yet.
+      window.requestAnimationFrame(focusReadingComposer);
     };
     window.addEventListener(READER_ASK_EVENT, onAsk);
     return () => window.removeEventListener(READER_ASK_EVENT, onAsk);
-  }, [activeLocator, setCompanionOpen]);
+  }, [activeLocator, toggleCompanion]);
 
   // Guided one-click actions (quick-action row, empty-state suggestions,
   // "organize notes") send immediately without ever touching the composer's
@@ -377,7 +416,23 @@ export function ReadingWorkspacePage() {
       }
     : undefined;
 
+  // Panels below their docking width are sheets over the document, and a
+  // sheet needs a scrim to close it by. The navigator docks at `lg`, the
+  // companion at `xl`; the scrim used to key on either one being open with a
+  // single `xl:hidden`, so at `lg` it dimmed a document the docked navigator
+  // was sitting beside and swallowed every click on the page.
+  const scrimClass =
+    companionOpen ? "xl:hidden" : navigatorOpen ? "lg:hidden" : "";
+  const materialReady =
+    activeTab?.material.status === "ready" && !isMedia && Boolean(material);
+
   return (
+    <ReadingActionsProvider
+      materialId={materialReady ? (activeTab?.material.material_id ?? null) : null}
+      locator={activeLocator}
+      onStart={() => toggleCompanion(true)}
+    >
+    <WorkspaceMenuContext.Provider value={menuHost}>
     <main
       ref={mainRef}
       data-learning={learning ? "true" : undefined}
@@ -386,12 +441,31 @@ export function ReadingWorkspacePage() {
     >
       <header className="flex h-11 shrink-0 items-center gap-1.5 border-b border-[var(--border)] bg-[var(--card)] px-2.5">
         <Link
-          href={scopedUrl(READING_HOME)}
+          href={readingFolderRoute(workspace.workspace_id)}
           className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)]"
-          aria-label={t("Back to collections")}
+          aria-label={t("Back to folder")}
         >
           <ArrowLeft size={14} />
         </Link>
+        {/* The outline opens on the left, so its switch lives on the left:
+            it sat at the far right, next to the companion's, and a learner
+            had to guess which of two panel icons was which. */}
+        <button
+          type="button"
+          onClick={() => toggleNavigator(!navigatorOpen)}
+          className={`flex size-7 shrink-0 items-center justify-center rounded-md transition hover:bg-[var(--muted)] ${
+            navigatorOpen
+              ? "text-[var(--primary)]"
+              : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+          }`}
+          aria-label={
+            navigatorOpen ? t("Collapse contents") : t("Expand contents")
+          }
+          title={navigatorOpen ? t("Collapse contents") : t("Expand contents")}
+          aria-expanded={navigatorOpen}
+        >
+          {navigatorOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
+        </button>
         <button
           type="button"
           onClick={() => setShowRename(true)}
@@ -400,17 +474,14 @@ export function ReadingWorkspacePage() {
         >
           {workspace.title}
         </button>
-        <span className="mx-1 h-4 w-px shrink-0 bg-[var(--border)]" />
-
-        <div className="min-w-0 flex-1" />
         <button
           type="button"
           onClick={() => setShowAddSource(true)}
-          className="mr-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--primary)]"
+          className="flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--primary)]"
           aria-label={t("Add material")}
           title={t("Add material")}
         >
-          <Plus size={13} />
+          <Plus size={14} />
         </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
@@ -419,77 +490,34 @@ export function ReadingWorkspacePage() {
               {notice}
             </span>
           )}
+          <ReadAloudButton disabled={!materialReady} />
+          {/* An icon, like every other control on this bar: as the only
+              labelled button it read as the page's primary action. */}
           <button
             type="button"
             onClick={() => (learning ? closeLearning() : openLearning())}
-            className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            className={`flex size-7 shrink-0 items-center justify-center rounded-md transition hover:bg-[var(--muted)] ${
+              learning
+                ? "text-[var(--primary)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            }`}
             aria-pressed={learning}
+            aria-label={t(
+              learning ? "Exit learning mode" : "Fullscreen learning",
+            )}
             title={t(
               learning ? "Exit learning mode" : "Fullscreen learning",
             )}
           >
-            {learning ? <Minimize2 size={13} /> : <Expand size={13} />}
-            {t(learning ? "Exit learning mode" : "Fullscreen learning")}
+            {learning ? <Minimize2 size={14} /> : <Expand size={14} />}
           </button>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowActions((current) => !current)}
-              className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)]"
-              aria-label={t("Collection actions")}
-              aria-expanded={showActions}
-            >
-              <MoreHorizontal size={14} />
-            </button>
-            {showActions && (
-              <div className="absolute right-0 top-8 z-40 w-48 rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 text-[11.5px] shadow-md dark:bg-[var(--popover)]">
-                <MenuItem
-                  icon={StickyNote}
-                  label={t("Organize notes")}
-                  onClick={() => {
-                    setShowActions(false);
-                    void organizeNotes();
-                  }}
-                />
-                <MenuItem
-                  icon={NotebookPen}
-                  label={t("Send to Notebook")}
-                  onClick={() => {
-                    setShowActions(false);
-                    setShowNotebook(true);
-                  }}
-                />
-                <MenuItem
-                  icon={GraduationCap}
-                  label={t("Build Mastery Path")}
-                  onClick={() => {
-                    setShowActions(false);
-                    setShowMastery(true);
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          <WorkspaceMenu
+            sections={menuSections}
+            collection={collectionMenu}
+          />
           <button
             type="button"
-            onClick={() => {
-              setCompanionOpen(false);
-              setNavigatorOpen(!navigatorOpen);
-            }}
-            className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--primary)]"
-            aria-label={
-              navigatorOpen ? t("Collapse contents") : t("Expand contents")
-            }
-            aria-expanded={navigatorOpen}
-          >
-            {navigatorOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setNavigatorOpen(false);
-              setCompanionOpen((current) => !current);
-            }}
+            onClick={() => toggleCompanion(!companionOpen)}
             className={`flex size-7 items-center justify-center rounded-md transition hover:bg-[var(--muted)] ${
               companionOpen
                 ? "text-[var(--primary)]"
@@ -519,12 +547,16 @@ export function ReadingWorkspacePage() {
         }`}
         style={gridStyle}
       >
-        {(navigatorOpen || companionOpen) && (
+        {scrimClass && (
           <button
             type="button"
-            className="absolute inset-0 z-20 bg-[var(--overlay)] xl:hidden"
+            className={`absolute inset-0 z-20 bg-[var(--overlay)] ${scrimClass}`}
             onClick={() => {
-              setNavigatorOpen(false);
+              // Only the panels that are sheets at this width: a docked
+              // navigator has nothing to do with a tap on the scrim.
+              if (!window.matchMedia("(min-width: 1024px)").matches) {
+                setNavigatorOpen(false);
+              }
               setCompanionOpen(false);
             }}
             aria-label={t("Close panels")}
@@ -556,6 +588,13 @@ export function ReadingWorkspacePage() {
           activeLocator={activeLocator}
           bookmarks={bookmarks}
           onRemoveBookmark={(bookmarkId) => void removeBookmark(bookmarkId)}
+          onOpenAnnotation={(locator, quote) =>
+            setDocumentJump((current) => ({
+              locator,
+              quote,
+              nonce: (current?.nonce ?? 0) + 1,
+            }))
+          }
           annotationCount={annotations.length}
           unitCount={material?.unit_count ?? 0}
           open={navigatorOpen}
@@ -616,6 +655,7 @@ export function ReadingWorkspacePage() {
                 // viewport, unlike the media stage above.
                 onLocatorChange={setActiveLocator}
                 headingJump={headingJump}
+                ownAnnotationList={false}
                 bookmarks={bookmarks}
                 onToggleBookmark={(locator, label) =>
                   void toggleBookmark(locator, label)
@@ -625,36 +665,6 @@ export function ReadingWorkspacePage() {
             </div>
           )}
 
-          {selection && (
-            <div className="absolute bottom-4 left-1/2 z-30 flex max-w-[82%] -translate-x-1/2 items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 shadow-[0_12px_36px_rgba(0,0,0,.16)] dark:border-[var(--border)] dark:bg-[var(--popover)]">
-              <Highlighter
-                size={13}
-                className="shrink-0 text-[var(--primary)]"
-              />
-              <p className="min-w-0 flex-1 truncate text-[10.5px] text-[var(--muted-foreground)] dark:text-[var(--foreground)]">
-                “{selection.quote}”
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setCompanionOpen(true);
-                  prefillInputRef.current?.("");
-                }}
-                className="shrink-0 rounded-lg bg-[var(--primary)] px-2.5 py-1 text-[10.5px] font-semibold text-[var(--primary-foreground)]"
-              >
-                {t("Ask AI")}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSelection(null);
-                  setReadingViewport({ selection: "" });
-                }}
-              >
-                <X size={11} />
-              </button>
-            </div>
-          )}
         </section>
 
         {showResizeHandle && (
@@ -673,17 +683,13 @@ export function ReadingWorkspacePage() {
           <ReadingCompanion
             workspaceId={workspaceId}
             material={activeTab?.material ?? null}
-            conversations={conversations}
             activeConversation={activeConversation}
             linkedSessionIds={linkedSessionIds}
             activeLocator={activeLocator}
             selection={selection}
             onClearSelection={() => setSelection(null)}
             onOpenLinker={() => setShowLinker(true)}
-            onSelectConversation={openConversation}
             onNewConversation={newConversation}
-            onRenameConversation={setRenameConversationTarget}
-            onDeleteConversation={setDeleteConversationTarget}
             onQuickPrompt={sendQuickPrompt}
             prefillInputRef={prefillInputRef}
             onClose={() => setCompanionOpen(false)}
@@ -703,38 +709,6 @@ export function ReadingWorkspacePage() {
           onConfirm={async () => {
             await removeMaterial(removeTarget);
             setRemoveTarget(null);
-          }}
-        />
-      )}
-
-      {renameConversationTarget && (
-        <WorkspaceValueDialog
-          title={t("Rename conversation")}
-          label={t("Conversation name")}
-          initialValue={renameConversationTarget.title}
-          actionLabel={t("Save")}
-          onClose={() => setRenameConversationTarget(null)}
-          onSubmit={async (value) => {
-            await renameConversation(
-              renameConversationTarget.session_id,
-              value,
-            );
-            setRenameConversationTarget(null);
-          }}
-        />
-      )}
-
-      {deleteConversationTarget && (
-        <WorkspaceConfirmDialog
-          title={t("Delete conversation")}
-          body={t("Delete “{{title}}”? The transcript cannot be recovered.", {
-            title: deleteConversationTarget.title,
-          })}
-          actionLabel={t("Delete")}
-          onClose={() => setDeleteConversationTarget(null)}
-          onConfirm={async () => {
-            await deleteConversation(deleteConversationTarget.session_id);
-            setDeleteConversationTarget(null);
           }}
         />
       )}
@@ -827,5 +801,7 @@ export function ReadingWorkspacePage() {
         />
       )}
     </main>
+    </WorkspaceMenuContext.Provider>
+    </ReadingActionsProvider>
   );
 }

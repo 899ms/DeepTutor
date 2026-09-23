@@ -2,6 +2,7 @@
 
 import {
   BrainCircuit,
+  Check,
   ChevronRight,
   CircleAlert,
   FileAudio,
@@ -9,6 +10,7 @@ import {
   Film,
   Library,
   Loader2,
+  Sparkles,
   StickyNote,
   Youtube,
 } from "lucide-react";
@@ -29,19 +31,47 @@ export function MenuItem({
   icon: Icon,
   label,
   onClick,
+  disabled,
+  hint,
+  active,
+  spinning,
 }: {
   icon: typeof StickyNote;
   label: string;
   onClick: () => void;
+  disabled?: boolean;
+  /** A second line under the label — why it is disabled, or what it acts on. */
+  hint?: string;
+  /** A setting that is on. Toggles report it; plain actions leave it unset. */
+  active?: boolean;
+  spinning?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-[var(--foreground)] transition hover:bg-[var(--muted)]"
+      disabled={disabled}
+      role={active === undefined ? undefined : "menuitemcheckbox"}
+      aria-checked={active}
+      className="flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left text-[var(--foreground)] transition hover:bg-[var(--muted)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent"
     >
-      <Icon size={12} className="text-[var(--muted-foreground)]" />
-      {label}
+      <Icon
+        size={13}
+        className={`mt-[2px] shrink-0 ${
+          active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
+        } ${spinning ? "animate-spin" : ""}`}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block">{label}</span>
+        {hint ? (
+          <span className="mt-0.5 block text-[10.5px] leading-snug text-[var(--muted-foreground)]">
+            {hint}
+          </span>
+        ) : null}
+      </span>
+      {active ? (
+        <Check size={13} className="mt-[2px] shrink-0 text-[var(--primary)]" />
+      ) : null}
     </button>
   );
 }
@@ -50,9 +80,12 @@ export function CompanionWelcome({
   title,
   onAction,
   suggestions = [],
+  tools = [],
 }: {
   title: string;
   onAction: (prompt: string) => void;
+  /** Page-level reading actions (a quiz on this page, say), one click each. */
+  tools?: { key: string; label: string; onClick: () => void }[];
   /**
    * Openers written against this material. Empty falls back to the three
    * generic lines below, which are true of any document — fine as a floor,
@@ -69,10 +102,10 @@ export function CompanionWelcome({
       <p className="mt-4 font-serif text-[17px] font-medium tracking-[-0.01em]">
         {t("Read with a grounded companion")}
       </p>
-      <p className="mt-2 text-[10.5px] leading-relaxed text-[var(--muted-foreground)]">
+      <p className="mt-2 text-[12px] leading-relaxed text-[var(--muted-foreground)]">
         {title
           ? t(
-              "Ask about {{title}}, select a passage, or use a guided action above.",
+              "Ask anything about {{title}}, or select a passage in the document to explain, translate or discuss it.",
               { title },
             )
           : t("Add material to begin a reading conversation.")}
@@ -90,16 +123,31 @@ export function CompanionWelcome({
             key={item}
             type="button"
             onClick={() => onAction(item)}
-            className="flex w-full items-start gap-2 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2.5 text-left text-[10.5px] leading-relaxed text-[var(--muted-foreground)] transition hover:border-[color-mix(in_srgb,var(--primary)_40%,transparent)] hover:text-[var(--foreground)] dark:border-[var(--border)] dark:bg-[var(--card)]"
+            className="flex w-full items-start gap-2 rounded-lg border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-left text-[12px] leading-relaxed text-[var(--muted-foreground)] transition hover:border-[color-mix(in_srgb,var(--primary)_40%,transparent)] hover:text-[var(--foreground)] dark:border-[var(--border)] dark:bg-[var(--card)]"
           >
             <ChevronRight
-              size={10}
+              size={12}
               className="mt-[3px] shrink-0 text-[var(--primary)]"
             />
             <span className="min-w-0 flex-1">{item}</span>
           </button>
         ))}
       </div>
+      {tools.length ? (
+        <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+          {tools.map((tool) => (
+            <button
+              key={tool.key}
+              type="button"
+              onClick={tool.onClick}
+              className="inline-flex h-7 items-center gap-1.5 rounded-full border border-[var(--border)] px-2.5 text-[11.5px] font-medium text-[var(--muted-foreground)] transition hover:border-[color-mix(in_srgb,var(--primary)_40%,transparent)] hover:text-[var(--foreground)]"
+            >
+              <Sparkles size={11} className="text-[var(--primary)]" />
+              {tool.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

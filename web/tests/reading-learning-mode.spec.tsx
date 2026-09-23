@@ -51,9 +51,6 @@ vi.mock('@/components/reading/workspace/useReadingWorkspace', () => ({
     switchMaterial: vi.fn(),
     removeMaterial: vi.fn(),
     newConversation: vi.fn(),
-    openConversation: vi.fn(),
-    renameConversation: vi.fn(),
-    deleteConversation: vi.fn(),
     organizeNotes: vi.fn(),
     buildMasteryPath: vi.fn(),
     renameWorkspace: vi.fn(),
@@ -63,6 +60,14 @@ vi.mock('@/components/reading/workspace/useReadingWorkspace', () => ({
 vi.mock('@/components/reading/ReaderPane', () => ({
   ReaderPane: () => null,
   READER_ASK_EVENT: 'dt:reader-ask',
+}))
+// The shared reading-actions catalog fetches on mount; this spec is about the
+// shell's panels, so it stands in as a pass-through (no actions, no header
+// read-aloud button).
+vi.mock('@/components/reading/ReadingActionsProvider', () => ({
+  ReadingActionsProvider: ({ children }: { children: React.ReactNode }) => (
+    <>{children}</>
+  ),
 }))
 vi.mock('@/components/reading/workspace/SourceNavigator', () => ({
   SourceNavigator: ({ open }: { open: boolean }) => (
@@ -90,7 +95,6 @@ vi.mock('@/components/reading/workspace/WorkspaceChrome', () => ({
 }))
 vi.mock('@/components/reading/workspace/dialogs', () => ({
   ConversationLinkDialog: () => null,
-  ConversationMenu: () => null,
   NotebookCaptureDialog: () => null,
   OrganizedNotesDialog: () => null,
   WorkspaceConfirmDialog: () => null,
@@ -137,7 +141,8 @@ describe('reading fullscreen learning', () => {
     const root = screen.getByRole('main')
     expect(root).toHaveAttribute('data-reading-workspace')
     expect(root).not.toHaveAttribute('data-learning')
-    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'true')
+    // The outline starts closed; learning mode opens it and hands it back.
+    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'false')
     expect(screen.getByTestId('reading-companion')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Fullscreen learning' }))
@@ -148,7 +153,7 @@ describe('reading fullscreen learning', () => {
 
     await user.click(screen.getByRole('button', { name: 'Exit learning mode' }))
     expect(root).not.toHaveAttribute('data-learning')
-    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'false')
     expect(screen.getByTestId('reading-companion')).toBeInTheDocument()
     expect(sidebar.inert).not.toBe(true)
     expect(sidebar.hasAttribute('inert')).toBe(false)
@@ -186,7 +191,7 @@ describe('reading fullscreen learning', () => {
     expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'true')
 
     await user.click(screen.getByRole('button', { name: 'Exit learning mode' }))
-    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'true')
+    expect(screen.getByTestId('reading-navigator')).toHaveAttribute('data-open', 'false')
   })
 
   it("restores the same workspace's saved learning mode and entry panels", async () => {

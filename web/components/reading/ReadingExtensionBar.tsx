@@ -18,6 +18,7 @@ import {
   type ReadingExtensionManifest,
   type ReadingExtensionResult,
 } from "@/lib/reading-api";
+import { useReadingActions } from "./reading-actions-context";
 
 type VocabularyTerm = {
   term: string;
@@ -40,14 +41,7 @@ type TranslationResult = {
 
 const PRIMARY_ACTION_ICONS = [Volume2, BookOpenText, PencilLine] as const;
 
-export function ReadingExtensionBar({
-  materialId,
-  locator,
-  selectionLocator,
-  selection,
-  sessionId,
-  onError,
-}: {
+type ReadingExtensionBarProps = {
   materialId: string;
   locator: number;
   /**
@@ -61,7 +55,33 @@ export function ReadingExtensionBar({
   selection?: string;
   sessionId?: string | null;
   onError: (message: string) => void;
-}) {
+};
+
+/**
+ * The strip of action buttons above the page.
+ *
+ * Inside a reading workspace an adult reader does not get it: the same
+ * actions live where they are needed — on the selection popover, in the
+ * companion's tools menu and on the header's read-aloud button — and their
+ * results land in the companion column. A strip of chips that were greyed
+ * out until something was selected, with a result slot of its own between
+ * the toolbar and the page, was a third place to look. Younger learners keep
+ * it: three big coloured buttons are the whole point of their layout.
+ */
+export function ReadingExtensionBar(props: ReadingExtensionBarProps) {
+  const shared = useReadingActions();
+  if (shared && shared.ageMode === "default") return null;
+  return <ExtensionToolbar {...props} />;
+}
+
+function ExtensionToolbar({
+  materialId,
+  locator,
+  selectionLocator,
+  selection,
+  sessionId,
+  onError,
+}: ReadingExtensionBarProps) {
   const { i18n, t } = useTranslation();
   const [extensions, setExtensions] = useState<ReadingExtensionManifest[]>([]);
   const [busy, setBusy] = useState("");
@@ -272,7 +292,7 @@ export function ReadingExtensionBar({
   );
 }
 
-function builtInActionLabel(extensionId: string, actionId: string) {
+export function builtInActionLabel(extensionId: string, actionId: string) {
   if (extensionId === "read_aloud" && actionId === "read") {
     return "Read aloud";
   }
@@ -294,7 +314,7 @@ function builtInActionLabel(extensionId: string, actionId: string) {
   return "";
 }
 
-function ExtensionResult({
+export function ExtensionResult({
   result,
   materialId,
   locator,
@@ -302,6 +322,7 @@ function ExtensionResult({
   closeLabel,
   onClose,
   onError,
+  variant = "strip",
 }: {
   result: ReadingExtensionResult;
   materialId: string;
@@ -310,6 +331,12 @@ function ExtensionResult({
   closeLabel: string;
   onClose: () => void;
   onError: (message: string) => void;
+  /**
+   * `strip` is the band under the toolbar, with its own title and close
+   * button. `card` is the body of a companion card, whose header already
+   * carries both.
+   */
+  variant?: "strip" | "card";
 }) {
   const questions = Array.isArray(result.payload.questions)
     ? (result.payload.questions as QuizQuestion[])
@@ -337,17 +364,28 @@ function ExtensionResult({
     note: String(result.payload.note || ""),
   };
   const body = String(result.payload.body || result.payload.overview || "");
+  const card = variant === "card";
   return (
-    <section className="relative shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-3 py-3 text-xs text-[var(--foreground)]">
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={closeLabel}
-        className="absolute right-2 top-2 text-[var(--muted-foreground)]"
-      >
-        <X size={14} />
-      </button>
-      <h3 className="pr-6 font-semibold">{result.title}</h3>
+    <section
+      className={
+        card
+          ? "text-[12.5px] leading-relaxed text-[var(--foreground)] [&>*:first-child]:mt-0"
+          : "relative shrink-0 border-b border-[var(--border)] bg-[var(--card)] px-3 py-3 text-xs text-[var(--foreground)]"
+      }
+    >
+      {card ? null : (
+        <>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={closeLabel}
+            className="absolute right-2 top-2 text-[var(--muted-foreground)]"
+          >
+            <X size={14} />
+          </button>
+          <h3 className="pr-6 font-semibold">{result.title}</h3>
+        </>
+      )}
       {result.message ? (
         <p className="mt-1 text-[var(--muted-foreground)]">{result.message}</p>
       ) : null}

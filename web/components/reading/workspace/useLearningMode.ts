@@ -51,8 +51,10 @@ export function useReadingLearningMode(workspaceId: string) {
   const [companionOpen, setCompanionOpen] = useState(() =>
     learning ? false : (learningSnapshot?.companionOpen ?? true)
   )
+  // The outline starts closed: a learner opens a collection to read, and the
+  // page is the thing to show. Learning mode still opens it on entry.
   const [navigatorOpen, setNavigatorOpen] = useState(() =>
-    learning ? true : (learningSnapshot?.navigatorOpen ?? true)
+    learning ? true : (learningSnapshot?.navigatorOpen ?? false)
   )
   const mainRef = useRef<HTMLElement | null>(null)
 
