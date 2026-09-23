@@ -27,6 +27,7 @@ import { useTranslation } from "react-i18next";
 
 import ChatComposer from "@/components/chat/home/ChatComposer";
 import type { ContextBudget } from "@/components/chat/home/ContextBudgetChip";
+import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import type { CapabilityDef } from "@/features/capabilities/presentation";
 import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
 import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
@@ -777,9 +778,16 @@ function StandaloneComposerImpl({
       if (!resourceReuse.policy.persona) setSelectedPersona(null);
       applyKnowledgeBases(retainedKnowledgeBases(selectedKnowledgeBases, agentNameSet, resourceReuse.policy));
       if (!resourceReuse.policy.memory) setSelectedMemoryFiles([]);
+      if (onResourceSelectionChange) {
+        const current = resourceSelection ?? { skills: [], mcp: [] };
+        onResourceSelectionChange({
+          skills: resourceReuse.policy.skills ? current.skills : [],
+          mcp: resourceReuse.policy.mcp ? current.mcp : [],
+        });
+      }
     },
     [
-      resourceReuse, applyKnowledgeBases, agentNameSet,
+      resourceReuse, applyKnowledgeBases, agentNameSet, onResourceSelectionChange, resourceSelection,
       attachments,
       awaitingUserReply,
       isStreaming,
@@ -902,6 +910,9 @@ function StandaloneComposerImpl({
         onResourceSelectionChange={onResourceSelectionChange}
         personaSelectorOpen={personaSelectorOpen}
         onPersonaSelectorOpenChange={setPersonaSelectorOpen}
+        resourceCatalog={resourceCatalog}
+        resourceSelection={resourceSelection}
+        onResourceSelectionChange={onResourceSelectionChange}
         llmOptions={llmOptions}
         activeLLMDefault={activeLLMDefault}
         llmSelection={llmSelection}
