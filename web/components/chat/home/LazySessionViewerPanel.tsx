@@ -6,6 +6,7 @@ import {
   useCallback,
   useImperativeHandle,
   useRef,
+  useState,
 } from "react";
 import type {
   SessionViewerPanelHandle,
@@ -14,8 +15,8 @@ import type {
 
 export type { SessionViewerPanelHandle } from "./SessionViewerPanel";
 
-// Split the viewer's activity, follow-up, and consultation UI from the
-// initial chat and mastery route scripts while warming it on hydration.
+// The viewer's activity, follow-up, and consultation UI is only needed once
+// the panel opens or an event requests a tab.
 const LoadedSessionViewerPanel = dynamic(
   () => import("./SessionViewerPanel"),
   { ssr: false },
@@ -32,6 +33,7 @@ const LazySessionViewerPanel = forwardRef<
 >(function LazySessionViewerPanel(props, ref) {
   const panelRef = useRef<SessionViewerPanelHandle | null>(null);
   const queuedCalls = useRef<QueuedCall[]>([]);
+  const [loadRequested, setLoadRequested] = useState(props.open);
 
   const callPanel = useCallback(
     (run: QueuedCall["run"]) => {
@@ -39,6 +41,7 @@ const LazySessionViewerPanel = forwardRef<
         run(panelRef.current);
       } else {
         queuedCalls.current.push({ sessionId: props.sessionId, run });
+        setLoadRequested(true);
       }
     },
     [props.sessionId],
@@ -80,7 +83,9 @@ const LazySessionViewerPanel = forwardRef<
     [callPanel],
   );
 
-  return <LoadedSessionViewerPanel {...props} ref={setPanelRef} />;
+  return loadRequested || props.open ? (
+    <LoadedSessionViewerPanel {...props} ref={setPanelRef} />
+  ) : null;
 });
 
 export default LazySessionViewerPanel;
