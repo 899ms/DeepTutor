@@ -11,6 +11,7 @@ import hashlib
 import itertools
 import json
 import logging
+import os
 from pathlib import Path
 import shutil
 from typing import TYPE_CHECKING, List, Optional
@@ -24,9 +25,15 @@ from deeptutor.services.rag.factory import (
     normalize_provider_name,
 )
 from deeptutor.services.rag.file_routing import FileTypeRouter
+from deeptutor.services.rag.index_probe import provider_failure_summary
 from deeptutor.services.rag.index_versioning import list_kb_versions
 from deeptutor.services.rag.provider_binding import resolve_bound_provider
 from deeptutor.services.rag.service import RAGService
+from deeptutor.services.setup.data_volume import (
+    DataVolumePermissionError,
+    ensure_data_volume_writable,
+    format_data_volume_permission_error,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +178,10 @@ class DocumentAdder:
         self.llamaindex_storage_dir = self.kb_dir / "llamaindex_storage"
         self.legacy_rag_storage_dir = self.kb_dir / "rag_storage"
         self.metadata_file = self.kb_dir / "metadata.json"
+
+        # Fail on UID-mismatched / unwritable volumes before the "not initialized"
+        # check, which otherwise hides Unraid bind-mount permission errors.
+        ensure_data_volume_writable(self.kb_dir)
 
         # Incremental adds must use the engine DeepTutor has bound to this KB. An
         # explicit rag_provider (from the API, already matched against the KB)
@@ -378,6 +389,13 @@ class DocumentAdder:
                     error = "Provider returned failure without details."
                     failures.append(DocumentIndexFailure(doc_file, error))
                     logger.error(f"Failed to index: {doc_file.name}")
+            except PermissionError as e:
+                logger.exception("Permission denied while indexing %s: %s", doc_file.name, e)
+                raise DataVolumePermissionError(
+                    format_data_volume_permission_error(
+                        self.kb_dir, uid=os.geteuid(), gid=os.getegid(), cause=e
+                    )
+                ) from e
             except Exception as e:
                 logger.exception(f"Failed {doc_file.name}: {e}")
                 failures.append(DocumentIndexFailure(doc_file, str(e)))
