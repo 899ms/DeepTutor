@@ -124,6 +124,11 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             **extra_kwargs,
         )
         content = result.get("answer") or result.get("content", "")
+        if not content and not result.get("error_type") and not result.get("sources"):
+            content = (
+                f"No matching content was found in knowledge base '{kb_name}'. "
+                "The search completed successfully."
+            )
         return ToolResult(
             content=content,
             sources=_rag_sources(result, query=query, kb_name=kb_name),
