@@ -2,7 +2,7 @@
 
 import { browserStorage } from "@/shared/storage";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -211,9 +211,38 @@ export function ReaderPane({
   >(undefined);
   const [showHistory, setShowHistory] = useState(false);
   const [showMoreTools, setShowMoreTools] = useState(false);
+  const moreToolsButtonRef = useRef<HTMLButtonElement>(null);
+  const moreToolsMenuRef = useRef<HTMLDivElement>(null);
   const [unavailableMaterials, setUnavailableMaterials] = useState<Set<string>>(
     new Set(),
   );
+
+  useEffect(() => {
+    if (!showMoreTools) return;
+    moreToolsMenuRef.current?.querySelector<HTMLElement>("[role^='menuitem']")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setShowMoreTools(false);
+      moreToolsButtonRef.current?.focus();
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !moreToolsMenuRef.current?.contains(target) &&
+        !moreToolsButtonRef.current?.contains(target)
+      ) {
+        setShowMoreTools(false);
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [showMoreTools]);
   const navigationNonceRef = useRef(0);
   const pendingNavigationRef = useRef<{
     mode: "push" | "replay";
@@ -853,6 +882,7 @@ export function ReaderPane({
             label={t("More")}
             active={showMoreTools}
             menu
+            buttonRef={moreToolsButtonRef}
             onClick={() => {
               setShowMoreTools(!showMoreTools);
               if (!showMoreTools) setShowHistory(false);
@@ -864,6 +894,7 @@ export function ReaderPane({
 
       {showMoreTools && material && (
         <div
+          ref={moreToolsMenuRef}
           role="menu"
           aria-label={t("More")}
           className="absolute top-11 right-2 z-40 w-56 rounded-xl border border-[var(--border)] bg-[var(--background)] p-1.5 shadow-xl md:hidden"
@@ -1101,6 +1132,7 @@ function HeaderButton({
   spinning,
   disabled,
   menu = false,
+  buttonRef,
   className = "",
 }: {
   icon: typeof FileText;
@@ -1110,10 +1142,12 @@ function HeaderButton({
   spinning?: boolean;
   disabled?: boolean;
   menu?: boolean;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
   className?: string;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       title={label}
       aria-label={label}

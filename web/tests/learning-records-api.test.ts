@@ -21,7 +21,9 @@ test("learning records request the account reading summary", async () => {
 
   try {
     const records = await listLearningRecords();
-    assert.equal(requestedUrl, "/api/mastery-paths/reading/records");
+    const requested = new URL(requestedUrl, "http://localhost");
+    assert.equal(requested.pathname, "/api/mastery-paths/reading/records");
+    assert.ok(requested.searchParams.has("dt_workspace"));
     assert.equal(requestedInit?.method, undefined);
     assert.deepEqual(requestedInit?.credentials, "include");
     assert.deepEqual(records, { progress: [], activities: [] });

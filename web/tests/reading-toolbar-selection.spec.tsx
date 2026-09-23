@@ -180,10 +180,15 @@ describe("reading toolbar with a live selection", () => {
       name: /Auto-jump on/,
     });
     expect(autoJump.getAttribute("aria-checked")).toBe("true");
+    expect(autoJump).toHaveFocus();
 
     await user.click(autoJump);
     expect(
       within(menu).getByRole("menuitemcheckbox", { name: /Auto-jump off/ }),
     ).toHaveAttribute("aria-checked", "false");
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menu", { name: "More" })).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
   });
 });

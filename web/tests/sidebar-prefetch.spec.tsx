@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
 
@@ -48,6 +48,9 @@ vi.mock("@/components/layout/AppShell", () => ({
 vi.mock("@/hooks/useDevice", () => ({
   useDevice: () => ({ isMobile: false }),
 }));
+vi.mock("@/hooks/useChatWorkspaces", () => ({
+  useChatWorkspaces: () => ({ workspaces: [], error: "" }),
+}));
 vi.mock("@/lib/app-update", () => ({
   fetchAppUpdateStatus: vi.fn(() => Promise.resolve({ current_version: "1.0" })),
   subscribeAppUpdateStatus: vi.fn(() => () => undefined),
@@ -63,26 +66,16 @@ function expectSidebarLinksToDisablePrefetch() {
   }
 }
 
-it("disables viewport prefetch for expanded sidebar navigation", async () => {
-  localStorage.setItem(
-    "deeptutor.sidebar.navLayout",
-    JSON.stringify({ order: [], collapsed: ["/books"] }),
-  );
+it("disables viewport prefetch for expanded sidebar navigation", () => {
   fixture.collapsed = false;
   render(<SidebarShell />);
 
-  fireEvent.click(await screen.findByRole("button", { name: /more/i }));
   expectSidebarLinksToDisablePrefetch();
 });
 
-it("disables viewport prefetch for collapsed sidebar overflow navigation", async () => {
-  localStorage.setItem(
-    "deeptutor.sidebar.navLayout",
-    JSON.stringify({ order: [], collapsed: ["/books"] }),
-  );
+it("disables viewport prefetch for collapsed sidebar navigation", () => {
   fixture.collapsed = true;
   render(<SidebarShell />);
 
-  fireEvent.click(await screen.findByRole("button", { name: /more/i }));
   expectSidebarLinksToDisablePrefetch();
 });

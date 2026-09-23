@@ -3,7 +3,6 @@
 import { scopedUrl } from "@/lib/workspace-scope";
 import { READING_HOME, readingSessionIdFromPath } from "@/lib/learning-routes";
 
-
 import { browserStorage } from "@/shared/storage";
 
 import Link from "next/link";
@@ -343,14 +342,13 @@ export function ReadingWorkspacePage() {
   // At desktop width the companion column is drag-resizable, so its track is
   // driven by JS state rather than the Tailwind classes below — a narrow
   // hairline "handle" track sits between the reader and the companion only
-  // in this case. Every other combination (companion closed, or too narrow
-  // for a three-column layout) is exactly what the className already says.
+  // in this case. The navigator has no grid track when it is closed.
   const showResizeHandle = isDesktopWide && companionOpen;
   const gridStyle: React.CSSProperties | undefined = showResizeHandle
     ? {
         gridTemplateColumns: navigatorOpen
           ? `minmax(184px,230px) minmax(360px,1fr) 5px ${companionWidth}px`
-          : `minmax(184px,230px) minmax(360px,1fr) 5px ${companionWidth}px`,
+          : `minmax(360px,1fr) 5px ${companionWidth}px`,
       }
     : undefined;
 
@@ -489,10 +487,10 @@ export function ReadingWorkspacePage() {
           companionOpen
             ? navigatorOpen
               ? "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)] xl:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)_5px_minmax(330px,420px)]"
-              : "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)] xl:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)_minmax(330px,420px)]"
+              : "grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(360px,1fr)_5px_minmax(330px,420px)]"
             : navigatorOpen
-              ? "grid-cols-[minmax(0,1fr)]"
-              : "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(0,1fr)]"
+              ? "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(0,1fr)]"
+              : "grid-cols-[minmax(0,1fr)]"
         }`}
         style={gridStyle}
       >

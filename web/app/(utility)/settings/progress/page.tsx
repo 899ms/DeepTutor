@@ -7,6 +7,7 @@ import {
   listLearningRecords,
   type LearningRecords,
 } from "@/lib/learning-records-api";
+import { listReadingLibraryMaterials } from "@/lib/reading-workspace-api";
 
 function percent(value: number): number {
   return Math.round(value * 100);
@@ -15,9 +16,21 @@ function percent(value: number): number {
 export default function LearningProgressPage() {
   const { t } = useTranslation();
   const [records, setRecords] = useState<LearningRecords | null>(null);
+  const [materialTitles, setMaterialTitles] = useState<Record<string, string>>({});
   const [error, setError] = useState(false);
 
-  useEffect(() => { void listLearningRecords().then(setRecords).catch(() => setError(true)); }, []);
+  useEffect(() => {
+    void listLearningRecords().then(setRecords).catch(() => setError(true));
+    void listReadingLibraryMaterials()
+      .then(({ materials }) =>
+        setMaterialTitles(
+          Object.fromEntries(materials.map((material) => [material.material_id, material.title])),
+        ),
+      )
+      .catch(() => {
+        // Progress remains usable if the library catalogue is unavailable.
+      });
+  }, []);
 
   const progress = records?.progress ?? [];
   const activities = records?.activities ?? [];
@@ -43,7 +56,7 @@ export default function LearningProgressPage() {
               <strong className="mt-1 block text-xl">{progress.length}</strong>
             </div>
             <div className="rounded-md border border-[var(--border)] p-4">
-              <span className="block text-xs text-[var(--muted-foreground)]">{t("Learning actions")}</span>
+              <span className="block text-xs text-[var(--muted-foreground)]">{t("Recent learning actions")}</span>
               <strong className="mt-1 block text-xl">{activities.length}</strong>
             </div>
           </div>
@@ -56,7 +69,7 @@ export default function LearningProgressPage() {
                 {progress.map((record) => (
                   <li key={record.material_id} className="rounded-md border border-[var(--border)] p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate font-medium">{record.material_id}</span>
+                      <span className="min-w-0 truncate font-medium">{materialTitles[record.material_id] || record.material_id}</span>
                       <span className="text-xs text-[var(--muted-foreground)]">
                         {percent(record.furthest_percentage)}%
                       </span>
@@ -80,14 +93,14 @@ export default function LearningProgressPage() {
             )}
           </section>
           <section className="mt-6">
-            <h2 className="text-sm font-semibold">{t("Learning actions")}</h2>
+            <h2 className="text-sm font-semibold">{t("Recent learning actions")}</h2>
             {activities.length === 0 ? (
               <p className="mt-3 text-sm text-[var(--muted-foreground)]">{t("No learning actions yet")}</p>
             ) : (
               <ul className="mt-3 grid gap-3">
                 {activities.map((record) => (
                   <li key={record.activity_id} className="rounded-md border border-[var(--border)] p-4">
-                    <span className="font-medium">{record.material_id}</span>
+                    <span className="font-medium">{materialTitles[record.material_id] || record.material_id}</span>
                     <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
                       {record.action} · {record.extension_id} · {t("Locator")} {record.locator}
                     </span>
