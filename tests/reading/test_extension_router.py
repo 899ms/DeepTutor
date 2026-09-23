@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from deeptutor.api.routers import reading_extensions
+from deeptutor.learning.storage import LearningStore
 from deeptutor.reading import ReadingStore
 from deeptutor.reading.extensions import (
     ReadingAction,
@@ -78,6 +79,32 @@ def test_action_receives_only_server_verified_visible_text(material, monkeypatch
     assert response.status_code == 200, response.text
     assert captured["selection"] == ""
     assert captured["visible_text"] == "Visible passage with a verified phrase."
+    records = LearningStore().list_reading_records()
+    assert len(records.activities) == 1
+    assert records.activities[0].material_id == material.material_id
+    assert records.activities[0].extension_id == "sample"
+    assert records.activities[0].action == "open"
+    assert records.activities[0].locator == 1
+    assert records.activities[0].result_type == "card"
+    assert "visible_text" not in records.activities[0].model_dump()
+
+
+def test_action_succeeds_when_activity_store_fails(material, monkeypatch):
+    def fail_activity(*_args, **_kwargs):
+        raise OSError("activity database unavailable")
+
+    monkeypatch.setattr(reading_extensions, "_record_reading_activity", fail_activity)
+    client = _client(
+        monkeypatch,
+        _extension(lambda *_: ReadingExtensionResult(type="card", payload={"body": "ok"})),
+    )
+
+    response = client.post(
+        f"/api/reading/materials/{material.material_id}/extensions/sample/actions/open",
+        json={"locator": 1},
+    )
+    assert response.status_code == 200
+    assert response.json()["payload"]["body"] == "ok"
 
 
 def test_source_anchor_is_loaded_from_server_position(material, monkeypatch):
@@ -145,6 +172,7 @@ def test_extension_failures_are_isolated(material, monkeypatch, run_action):
     )
     assert response.status_code == 503
     assert response.json()["detail"]["recoverable"] is True
+    assert LearningStore().list_reading_records().activities == []
 
 
 def test_hanging_extension_action_times_out(material, monkeypatch):

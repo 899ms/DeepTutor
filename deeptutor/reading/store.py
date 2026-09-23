@@ -77,6 +77,7 @@ UNITS_DIR = "units"
 RAW_DIR = "raw"
 MEDIA_DIR = "media"
 MEDIA_INDEX_NAME = "media.json"
+RENDER_DIR = "render"
 ASSETS_DIR = "assets"
 REVISIONS_DIR = "revisions"
 
@@ -122,6 +123,24 @@ def _quote_context_matches(
     return (not wanted_prefix or preceding.endswith(wanted_prefix)) and (
         not wanted_suffix or following.startswith(wanted_suffix)
     )
+
+
+def _find_all_quote_spans(text: str, selector: TextQuoteSelector) -> list[tuple[int, int]]:
+    """All spans matching the quote, preferring context-filtered matches.
+
+    When the quote occurs multiple times but only once carries the stored
+    prefix/suffix context, only the contextual hit is returned — the other
+    occurrences are coincidence. When context eliminates everything (the
+    surrounding text shifted), the raw occurrences are returned so the caller
+    can still distinguish a unique reflow from true ambiguity.
+    """
+    words = re.findall(r"\S+", selector.exact)
+    if not words:
+        return []
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in words))
+    all_spans = [match.span() for match in pattern.finditer(text)]
+    contextual = [span for span in all_spans if _quote_context_matches(text, span, selector)]
+    return contextual if contextual else all_spans
 
 
 def _read_json(path: Path) -> Any:
@@ -245,7 +264,22 @@ class ReadingStore:
         if not data:
             raise ReadingError(f"{path.name} is empty")
 
-        material_id = content_hash(data)
+        source_data = data
+        is_epub = path.suffix.lower() == ".epub"
+        if is_epub:
+            from deeptutor.utils.document_extractor import (
+                DocumentExtractionError,
+                normalize_epub_archive,
+            )
+
+            try:
+                data = normalize_epub_archive(source_data, path.name)
+            except DocumentExtractionError as exc:
+                raise ReadingError(f"{path.name}: failed to read EPUB ({exc})") from exc
+
+        # Content identity and /raw describe the uploaded bytes. The repaired
+        # archive is a separate browser view so an older import keeps its ID.
+        material_id = content_hash(source_data)
         display_name = (filename or path.name).strip() or path.name
 
         with self._locked(material_id):
@@ -254,7 +288,12 @@ class ReadingStore:
                 wants_epub_upgrade = (
                     path.suffix.lower() == ".epub" and existing.render_mode != "epub"
                 )
-                if not wants_epub_upgrade:
+                needs_render_archive = (
+                    is_epub
+                    and data != source_data
+                    and not (self._dir(material_id) / RENDER_DIR).is_dir()
+                )
+                if not wants_epub_upgrade and not needs_render_archive:
                     return existing
                 if self.annotations(material_id):
                     raise ReadingUpgradeConflict(
@@ -262,7 +301,7 @@ class ReadingStore:
                         "Export those annotations before replacing it with the source-faithful version."
                     )
 
-            extraction = extract_material(path)
+            extraction = extract_material(path, data=data if is_epub else None)
             material_dir = self._dir(material_id)
             stage_dir = self.root / f".{material_id}.{uuid.uuid4().hex[:8]}.staging"
             backup_dir = self.root / f".{material_id}.{uuid.uuid4().hex[:8]}.backup"
@@ -295,7 +334,11 @@ class ReadingStore:
                 raw_dir = stage_dir / RAW_DIR
                 raw_dir.mkdir(parents=True, exist_ok=True)
                 raw_path = raw_dir / _safe_filename(display_name, fallback=path.name)
-                raw_path.write_bytes(data)
+                raw_path.write_bytes(source_data)
+                if is_epub and data != source_data:
+                    render_dir = stage_dir / RENDER_DIR
+                    render_dir.mkdir(parents=True, exist_ok=True)
+                    (render_dir / raw_path.name).write_bytes(data)
 
             # A PDF page's first text line is not a table of contents. It is
             # often a figure caption, running header, or reference entry, so
@@ -325,7 +368,7 @@ class ReadingStore:
                 title=extraction.title or Path(display_name).stem,
                 source_hash=material_id,
                 extractor=extraction.extractor,
-                byte_size=len(data),
+                byte_size=len(source_data),
                 char_count=extraction.char_count,
                 created_at=time.time(),
                 # Compatibility: old clients route this boolean directly to
@@ -664,6 +707,11 @@ class ReadingStore:
                         source_dir = material_dir / dirname
                         if source_dir.is_dir():
                             shutil.copytree(source_dir, revision_dir / dirname)
+                    # Preserve the pre-migration annotations alongside the
+                    # old revision so the previous state survives for audit.
+                    annotations_state = material_dir / ANNOTATIONS_DIR
+                    if annotations_state.is_dir():
+                        shutil.copytree(annotations_state, revision_dir / ANNOTATIONS_DIR)
             for state_name in (ANNOTATIONS_NAME, POSITION_NAME):
                 source_state = material_dir / state_name
                 if source_state.is_file():
@@ -676,6 +724,11 @@ class ReadingStore:
                         stage_dir / state_dir,
                         dirs_exist_ok=True,
                     )
+            # Re-anchor selectors against the new revision's text while the
+            # material directory is still staged. A failure here leaves the
+            # original annotations untouched and the swap still proceeds.
+            if existing is not None:
+                self._reanchor_annotations(stage_dir, manifest.revision)
             try:
                 if material_dir.exists():
                     os.replace(material_dir, backup_dir)
@@ -938,6 +991,13 @@ class ReadingStore:
             if changed:
                 _atomic_write(index_path, json.dumps(rows, ensure_ascii=False))
             return changed
+    def render_path(self, material_id: str) -> Path | None:
+        """Browser-ready EPUB archive; original bytes for all other formats."""
+        manifest = self.manifest(material_id)
+        if manifest.render_mode == "text":
+            return None
+        material_dir = self._dir(material_id)
+        return self._find_file_in_dir(material_dir / RENDER_DIR) or self._find_raw(material_dir)
 
     def _has_raw(self, material_id: str) -> bool:
         """Whether original bytes are already on disk, without loading them."""
@@ -988,10 +1048,13 @@ class ReadingStore:
 
     @staticmethod
     def _find_raw(material_dir: Path) -> Path | None:
-        raw_dir = material_dir / RAW_DIR
-        if not raw_dir.is_dir():
+        return ReadingStore._find_file_in_dir(material_dir / RAW_DIR)
+
+    @staticmethod
+    def _find_file_in_dir(directory: Path) -> Path | None:
+        if not directory.is_dir():
             return None
-        for candidate in sorted(raw_dir.iterdir()):
+        for candidate in sorted(directory.iterdir()):
             if candidate.is_file():
                 return candidate
         return None
@@ -1082,6 +1145,101 @@ class ReadingStore:
             if isinstance(row, dict) and row.get("annotation_id")
         ]
         return sorted(parsed, key=lambda a: (a.locator, a.created_at))
+
+    def _reanchor_annotations(
+        self,
+        stage_dir: Path,
+        new_revision: int,
+    ) -> None:
+        """Re-anchor selectors after a revision upgrade.
+
+        Called while the new material directory is still staged, before the
+        atomic swap. Reads the annotations that were just copied forward and
+        re-resolves each quote against the new unit texts. Reliable matches
+        are migrated (locator, selectors, and revision bumped); ambiguous or
+        vanished quotes keep their original locator and revision but are
+        marked so the reader can show an explicit review state instead of
+        painting the wrong passage.
+        """
+        annotation_files = sorted((stage_dir / ANNOTATIONS_DIR).glob("*.json"))
+        if not annotation_files:
+            return
+
+        new_unit_texts: dict[int, str] = {}
+        units_dir = stage_dir / UNITS_DIR
+        if units_dir.is_dir():
+            for unit_file in sorted(units_dir.iterdir()):
+                if unit_file.suffix == ".txt":
+                    locator = int(unit_file.stem)
+                    new_unit_texts[locator] = unit_file.read_text(encoding="utf-8")
+
+        for annotations_path in annotation_files:
+            rows_data = _read_json(annotations_path)
+            if not isinstance(rows_data, list) or not rows_data:
+                continue
+            rows = [
+                Annotation.from_dict(row)
+                for row in rows_data
+                if isinstance(row, dict) and row.get("annotation_id")
+            ]
+            if not rows:
+                continue
+
+            changed = False
+            migrated: list[Annotation] = []
+            for row in rows:
+                quote_selectors = [s for s in row.selectors if isinstance(s, TextQuoteSelector)]
+                if not quote_selectors:
+                    # A numeric position alone cannot be trusted after the text
+                    # changes. Leave it pinned to the archived revision for review.
+                    migrated.append(dataclass_replace(row, resolution="unresolved"))
+                    changed = True
+                    continue
+                quote_selector = quote_selectors[0]
+                matches: list[tuple[int, tuple[int, int]]] = []
+                for locator, text in sorted(new_unit_texts.items()):
+                    for span in _find_all_quote_spans(text, quote_selector):
+                        matches.append((locator, span))
+                if len(matches) == 1:
+                    locator, (start, end) = matches[0]
+                    unit_text = new_unit_texts[locator]
+                    canonical_exact = unit_text[start:end]
+                    new_quote = dataclass_replace(quote_selector, exact=canonical_exact)
+                    new_selectors = []
+                    for s in row.selectors:
+                        if s is quote_selector:
+                            new_selectors.append(new_quote)
+                        elif isinstance(s, TextPositionSelector):
+                            new_selectors.append(TextPositionSelector(start=start, end=end))
+                        else:
+                            new_selectors.append(s)
+                    migrated.append(
+                        dataclass_replace(
+                            row,
+                            locator=locator,
+                            quote=canonical_exact,
+                            selectors=tuple(new_selectors),
+                            material_revision=new_revision,
+                            resolution="resolved",
+                        )
+                    )
+                    changed = True
+                elif len(matches) > 1:
+                    migrated.append(dataclass_replace(row, resolution="ambiguous"))
+                    changed = True
+                else:
+                    migrated.append(dataclass_replace(row, resolution="unresolved"))
+                    changed = True
+
+            if changed:
+                _atomic_write(
+                    annotations_path,
+                    json.dumps(
+                        [row.to_dict() for row in migrated],
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                )
 
     def _write_annotations(self, material_id: str, rows: Sequence[Annotation]) -> None:
         _atomic_write(

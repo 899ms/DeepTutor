@@ -3,7 +3,6 @@
 import { scopedUrl } from "@/lib/workspace-scope";
 import { READING_HOME, readingSessionIdFromPath } from "@/lib/learning-routes";
 
-
 import { browserStorage } from "@/shared/storage";
 
 import Link from "next/link";
@@ -17,11 +16,13 @@ import {
   ArrowLeft,
   ChevronDown,
   CircleAlert,
+  Expand,
   GraduationCap,
   Highlighter,
   History,
   Link2,
   Loader2,
+  Minimize2,
   MoreHorizontal,
   NotebookPen,
   PanelLeftClose,
@@ -72,7 +73,6 @@ import {
   MaterialFailure,
   MaterialProcessing,
   MenuItem,
-  iconForMaterial,
 } from "./WorkspaceChrome";
 import {
   ConversationLinkDialog,
@@ -85,6 +85,7 @@ import {
 import { AddMaterialsDialog } from "@/components/reading/library/AddMaterialsDialog";
 import { ReadingCompanion } from "./ReadingCompanion";
 import { useReadingWorkspace } from "./useReadingWorkspace";
+import { useReadingLearningMode } from "./useLearningMode";
 
 interface ReaderAskDetail {
   quote?: string;
@@ -197,9 +198,16 @@ export function ReadingWorkspacePage() {
     useState<ReadingConversation | null>(null);
   const [deleteConversationTarget, setDeleteConversationTarget] =
     useState<ReadingConversation | null>(null);
-  const [companionOpen, setCompanionOpen] = useState(true);
-  const [navigatorOpen, setNavigatorOpen] = useState(false);
-  const [navigatorCollapsed, setNavigatorCollapsed] = useState(true);
+  const {
+    closeLearning,
+    companionOpen,
+    learning,
+    mainRef,
+    navigatorOpen,
+    openLearning,
+    setCompanionOpen,
+    setNavigatorOpen,
+  } = useReadingLearningMode(workspaceId);
   const [documentJump, setDocumentJump] = useState<JumpRequest | null>(null);
   const [pageHeadings, setPageHeadings] = useState<ReaderHeading[]>([]);
   const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
@@ -220,7 +228,7 @@ export function ReadingWorkspacePage() {
       }
     });
     return () => window.cancelAnimationFrame(frame);
-  }, []);
+  }, [setCompanionOpen]);
 
   useEffect(() => {
     const onAsk = (event: Event) => {
@@ -237,7 +245,7 @@ export function ReadingWorkspacePage() {
     };
     window.addEventListener(READER_ASK_EVENT, onAsk);
     return () => window.removeEventListener(READER_ASK_EVENT, onAsk);
-  }, [activeLocator]);
+  }, [activeLocator, setCompanionOpen]);
 
   // Guided one-click actions (quick-action row, empty-state suggestions,
   // "organize notes") send immediately without ever touching the composer's
@@ -264,7 +272,7 @@ export function ReadingWorkspacePage() {
       event.preventDefault();
       const startX = event.clientX;
       const startWidth = companionWidth;
-      const reserved = navigatorCollapsed ? 420 : 650;
+      const reserved = navigatorOpen ? 650 : 420;
       const max = Math.max(300, Math.min(640, window.innerWidth - reserved));
       const onMove = (moveEvent: PointerEvent) => {
         const next = startWidth + (startX - moveEvent.clientX);
@@ -289,7 +297,7 @@ export function ReadingWorkspacePage() {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [companionWidth, navigatorCollapsed],
+    [companionWidth, navigatorOpen],
   );
 
   if (loading) {
@@ -334,19 +342,23 @@ export function ReadingWorkspacePage() {
   // At desktop width the companion column is drag-resizable, so its track is
   // driven by JS state rather than the Tailwind classes below — a narrow
   // hairline "handle" track sits between the reader and the companion only
-  // in this case. Every other combination (companion closed, or too narrow
-  // for a three-column layout) is exactly what the className already says.
+  // in this case. The navigator has no grid track when it is closed.
   const showResizeHandle = isDesktopWide && companionOpen;
   const gridStyle: React.CSSProperties | undefined = showResizeHandle
     ? {
-        gridTemplateColumns: navigatorCollapsed
-          ? `minmax(360px,1fr) 5px ${companionWidth}px`
-          : `minmax(184px,230px) minmax(360px,1fr) 5px ${companionWidth}px`,
+        gridTemplateColumns: navigatorOpen
+          ? `minmax(184px,230px) minmax(360px,1fr) 5px ${companionWidth}px`
+          : `minmax(360px,1fr) 5px ${companionWidth}px`,
       }
     : undefined;
 
   return (
-    <main className="reading-v2 flex h-full min-h-0 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] dark:bg-[var(--background)] dark:text-[var(--foreground)]">
+    <main
+      ref={mainRef}
+      data-learning={learning ? "true" : undefined}
+      data-reading-workspace=""
+      className="reading-v2 flex h-full min-h-0 flex-col overflow-hidden bg-[var(--background)] text-[var(--foreground)] dark:bg-[var(--background)] dark:text-[var(--foreground)]"
+    >
       <header className="flex h-11 shrink-0 items-center gap-1.5 border-b border-[var(--border)] bg-[var(--card)] px-2.5">
         <Link
           href={scopedUrl(READING_HOME)}
@@ -365,64 +377,16 @@ export function ReadingWorkspacePage() {
         </button>
         <span className="mx-1 h-4 w-px shrink-0 bg-[var(--border)]" />
 
-        {/* The collection's materials. They are members of the collection, not
-            browser tabs: closing one removes it, so the control says so and
-            only the open material offers it. */}
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
-          {workspace.tabs.map((tab) => {
-            const active =
-              tab.material.material_id === workspace.active_material_id;
-            const TabIcon = iconForMaterial(tab.material);
-            const busy =
-              tab.material.status === "processing" ||
-              tab.material.status === "queued";
-            return (
-              <span
-                key={tab.material.material_id}
-                className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md pl-2 pr-1.5 text-[11px] transition ${
-                  active
-                    ? "bg-[var(--background)] font-semibold text-[var(--foreground)] shadow-[inset_0_0_0_1px_var(--border)]"
-                    : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => void switchMaterial(tab.material)}
-                  className="flex min-w-0 items-center gap-1.5"
-                >
-                  {busy ? (
-                    <Loader2 size={11} className="shrink-0 animate-spin" />
-                  ) : (
-                    <TabIcon size={11} className="shrink-0" />
-                  )}
-                  <span className="max-w-[168px] truncate">
-                    {tab.material.title}
-                  </span>
-                </button>
-                {active && workspace.tabs.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setRemoveTarget(tab.material)}
-                    className="shrink-0 text-[var(--muted-foreground)] transition hover:text-[var(--destructive)]"
-                    aria-label={t("Remove from collection")}
-                    title={t("Remove from collection")}
-                  >
-                    <X size={11} />
-                  </button>
-                )}
-              </span>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setShowAddSource(true)}
-            className="flex size-6 shrink-0 items-center justify-center rounded-md border border-dashed border-[var(--border)] text-[var(--muted-foreground)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
-            aria-label={t("Add material")}
-            title={t("Add material")}
-          >
-            <Plus size={11} />
-          </button>
-        </div>
+        <div className="min-w-0 flex-1" />
+        <button
+          type="button"
+          onClick={() => setShowAddSource(true)}
+          className="mr-0.5 flex size-7 shrink-0 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--primary)]"
+          aria-label={t("Add material")}
+          title={t("Add material")}
+        >
+          <Plus size={13} />
+        </button>
 
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
           {notice && (
@@ -430,6 +394,18 @@ export function ReadingWorkspacePage() {
               {notice}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => (learning ? closeLearning() : openLearning())}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-md px-1.5 text-[11px] font-medium text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            aria-pressed={learning}
+            title={t(
+              learning ? "Exit learning mode" : "Fullscreen learning",
+            )}
+          >
+            {learning ? <Minimize2 size={13} /> : <Expand size={13} />}
+            {t(learning ? "Exit learning mode" : "Fullscreen learning")}
+          </button>
           <div className="relative">
             <button
               type="button"
@@ -472,24 +448,16 @@ export function ReadingWorkspacePage() {
           <button
             type="button"
             onClick={() => {
-              if (window.matchMedia("(min-width: 1024px)").matches) {
-                setNavigatorCollapsed((current) => !current);
-              } else {
-                setCompanionOpen(false);
-                setNavigatorOpen((current) => !current);
-              }
+              setCompanionOpen(false);
+              setNavigatorOpen(!navigatorOpen);
             }}
             className="flex size-7 items-center justify-center rounded-md text-[var(--muted-foreground)] transition hover:bg-[var(--muted)] hover:text-[var(--primary)]"
             aria-label={
-              navigatorCollapsed ? t("Expand contents") : t("Collapse contents")
+              navigatorOpen ? t("Collapse contents") : t("Expand contents")
             }
-            aria-expanded={navigatorOpen || !navigatorCollapsed}
+            aria-expanded={navigatorOpen}
           >
-            {navigatorCollapsed ? (
-              <PanelLeftOpen size={14} />
-            ) : (
-              <PanelLeftClose size={14} />
-            )}
+            {navigatorOpen ? <PanelLeftClose size={14} /> : <PanelLeftOpen size={14} />}
           </button>
           <button
             type="button"
@@ -517,12 +485,12 @@ export function ReadingWorkspacePage() {
       <div
         className={`relative grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)] overflow-hidden ${
           companionOpen
-            ? navigatorCollapsed
-              ? "grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(360px,1fr)_minmax(330px,420px)]"
-              : "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)] xl:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)_minmax(330px,420px)]"
-            : navigatorCollapsed
-              ? "grid-cols-[minmax(0,1fr)]"
-              : "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(0,1fr)]"
+            ? navigatorOpen
+              ? "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)] xl:grid-cols-[minmax(184px,230px)_minmax(360px,1fr)_5px_minmax(330px,420px)]"
+              : "grid-cols-[minmax(0,1fr)] xl:grid-cols-[minmax(360px,1fr)_5px_minmax(330px,420px)]"
+            : navigatorOpen
+              ? "grid-cols-[minmax(0,1fr)] lg:grid-cols-[minmax(184px,230px)_minmax(0,1fr)]"
+              : "grid-cols-[minmax(0,1fr)]"
         }`}
         style={gridStyle}
       >
@@ -539,6 +507,10 @@ export function ReadingWorkspacePage() {
         )}
         <SourceNavigator
           material={activeTab?.material ?? null}
+          materials={workspace.tabs}
+          activeMaterialId={workspace.active_material_id}
+          onSelectMaterial={(candidate) => void switchMaterial(candidate)}
+          onRemoveMaterial={setRemoveTarget}
           outline={material?.outline ?? []}
           pageHeadings={pageHeadings}
           activeHeadingId={activeHeadingId}
@@ -561,10 +533,8 @@ export function ReadingWorkspacePage() {
           onRemoveBookmark={(bookmarkId) => void removeBookmark(bookmarkId)}
           annotationCount={annotations.length}
           unitCount={material?.unit_count ?? 0}
-          mobileOpen={navigatorOpen}
-          desktopOpen={!navigatorCollapsed}
-          onMobileClose={() => setNavigatorOpen(false)}
-          onCollapse={() => setNavigatorCollapsed(true)}
+          open={navigatorOpen}
+          onClose={() => setNavigatorOpen(false)}
           onNavigate={(locator, quote) => {
             setActiveLocator(locator);
             reportViewport({ locator });
@@ -599,6 +569,7 @@ export function ReadingWorkspacePage() {
               material={activeTab.material}
               title={activeTab.material.title}
               refs={material?.unit_refs ?? []}
+              transcript={material?.unit === "segment" ? transcript : []}
               transcriptUnavailable={transcriptUnavailable}
               chaptersOnly={chaptersOnly}
               activeLocator={activeLocator}

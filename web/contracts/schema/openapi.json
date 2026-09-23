@@ -1936,8 +1936,7 @@
           },
           "modules": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ModuleInput"
             },
             "maxItems": 20,
             "title": "Modules",
@@ -3327,8 +3326,7 @@
         "properties": {
           "modules": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ModuleInput"
             },
             "maxItems": 20,
             "minItems": 1,
@@ -4070,8 +4068,7 @@
         "properties": {
           "modules": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ModuleInput"
             },
             "title": "Modules",
             "type": "array"
@@ -4337,6 +4334,84 @@
         ],
         "title": "KnowledgeBaseInfo",
         "type": "object"
+      },
+      "KnowledgePointInput": {
+        "properties": {
+          "client_ref": {
+            "default": "",
+            "title": "Client Ref",
+            "type": "string"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "module_id": {
+            "default": "",
+            "title": "Module Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "prerequisite_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisite Ids",
+            "type": "array"
+          },
+          "prerequisite_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Prerequisite Refs",
+            "type": "array"
+          },
+          "topic_source_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Topic Source Ids",
+            "type": "array"
+          },
+          "topic_source_refs": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Topic Source Refs",
+            "type": "array"
+          },
+          "type": {
+            "$ref": "#/components/schemas/KnowledgeType",
+            "default": "concept"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "KnowledgePointInput",
+        "type": "object"
+      },
+      "KnowledgeType": {
+        "enum": [
+          "memory",
+          "concept",
+          "procedure",
+          "design"
+        ],
+        "title": "KnowledgeType",
+        "type": "string"
       },
       "LLMSelection": {
         "additionalProperties": false,
@@ -5888,6 +5963,61 @@
           }
         },
         "title": "ModelUsage",
+        "type": "object"
+      },
+      "ModuleInput": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "knowledge_points": {
+            "items": {
+              "$ref": "#/components/schemas/KnowledgePointInput"
+            },
+            "title": "Knowledge Points",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "objective": {
+            "default": "",
+            "maxLength": 300,
+            "title": "Objective",
+            "type": "string"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          },
+          "pass_threshold": {
+            "default": 0.7,
+            "title": "Pass Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "ModuleInput",
         "type": "object"
       },
       "MoveBlockRequest": {
@@ -7524,6 +7654,121 @@
           "operation_id"
         ],
         "title": "ReactEditResponse",
+        "type": "object"
+      },
+      "ReadingActivityRecord": {
+        "description": "One successful Reading-extension action, without source content.",
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "activity_id": {
+            "title": "Activity Id",
+            "type": "string"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "number"
+          },
+          "extension_id": {
+            "title": "Extension Id",
+            "type": "string"
+          },
+          "locator": {
+            "minimum": 1.0,
+            "title": "Locator",
+            "type": "integer"
+          },
+          "material_id": {
+            "title": "Material Id",
+            "type": "string"
+          },
+          "result_type": {
+            "enum": [
+              "card",
+              "quiz",
+              "feedback",
+              "browser_speech"
+            ],
+            "title": "Result Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "activity_id",
+          "material_id",
+          "extension_id",
+          "action",
+          "locator",
+          "result_type"
+        ],
+        "title": "ReadingActivityRecord",
+        "type": "object"
+      },
+      "ReadingLearningRecords": {
+        "description": "Account-scoped Reading summary for reporting surfaces.",
+        "properties": {
+          "activities": {
+            "items": {
+              "$ref": "#/components/schemas/ReadingActivityRecord"
+            },
+            "title": "Activities",
+            "type": "array"
+          },
+          "progress": {
+            "items": {
+              "$ref": "#/components/schemas/ReadingProgressRecord"
+            },
+            "title": "Progress",
+            "type": "array"
+          }
+        },
+        "title": "ReadingLearningRecords",
+        "type": "object"
+      },
+      "ReadingProgressRecord": {
+        "description": "One material's Reading progress in an account's learning records.",
+        "properties": {
+          "furthest_locator": {
+            "minimum": 1.0,
+            "title": "Furthest Locator",
+            "type": "integer"
+          },
+          "furthest_percentage": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Furthest Percentage",
+            "type": "number"
+          },
+          "latest_locator": {
+            "minimum": 1.0,
+            "title": "Latest Locator",
+            "type": "integer"
+          },
+          "latest_percentage": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Latest Percentage",
+            "type": "number"
+          },
+          "material_id": {
+            "title": "Material Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "material_id",
+          "latest_locator",
+          "latest_percentage",
+          "furthest_locator",
+          "furthest_percentage"
+        ],
+        "title": "ReadingProgressRecord",
         "type": "object"
       },
       "ReadingReference": {
@@ -9580,6 +9825,11 @@
             "default": true,
             "title": "Available",
             "type": "boolean"
+          },
+          "client_ref": {
+            "default": "",
+            "title": "Client Ref",
+            "type": "string"
           },
           "excerpt": {
             "default": "",
@@ -26612,6 +26862,72 @@
         ]
       }
     },
+    "/api/mastery-paths/reading/records": {
+      "get": {
+        "description": "Reading progress and extension activity for the current account.",
+        "operationId": "list_reading_learning_records_api_mastery_paths_reading_records_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadingLearningRecords"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Reading Learning Records",
+        "tags": [
+          "mastery-path"
+        ]
+      }
+    },
     "/api/mastery-paths/topics": {
       "get": {
         "operationId": "list_topics_api_mastery_paths_topics_get",
@@ -41815,6 +42131,79 @@
           }
         },
         "summary": "Get Raw",
+        "tags": [
+          "reading"
+        ]
+      }
+    },
+    "/api/reading/materials/{material_id}/render": {
+      "get": {
+        "description": "Serve a browser-ready EPUB archive, or the original for other formats.",
+        "operationId": "get_render_api_reading_materials__material_id__render_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "material_id",
+            "required": true,
+            "schema": {
+              "title": "Material Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Render",
         "tags": [
           "reading"
         ]
