@@ -90,7 +90,6 @@ class LlamaIndexDocumentLoader:
             scanned_pdf_needs_ocr = (
                 file_path.suffix.lower() == ".pdf"
                 and not text.strip()
-                and bool(extracted_images)
                 and parse_engine != _PDF_OCR_FALLBACK_ENGINE
             )
             if scanned_pdf_needs_ocr:

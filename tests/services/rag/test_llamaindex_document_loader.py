@@ -575,3 +575,29 @@ def test_loader_skips_images_when_llm_client_is_unavailable(
     assert "requires both multimodal embedding and multimodal LLM support" in caplog.text
     assert "LLM client is unavailable" in caplog.text
     assert "no LLM configured" in caplog.text
+
+
+def test_loader_falls_back_to_ocr_when_scanned_pdf_has_no_extracted_assets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pytest.importorskip("llama_index.core")
+    from deeptutor.services.parsing.types import ParsedDocument
+    from deeptutor.services.rag.pipelines.llamaindex import document_loader as loader_module
+    from deeptutor.services.rag.pipelines.llamaindex.document_loader import LlamaIndexDocumentLoader
+
+    pdf_path = tmp_path / "scan.pdf"
+    pdf_path.write_bytes(b"stub")
+    calls = _install_sequential_parse_service(
+        monkeypatch,
+        [
+            ParsedDocument(markdown="", engine="pymupdf4llm"),
+            ParsedDocument(markdown="Recovered scan", engine="liteparse"),
+        ],
+    )
+    monkeypatch.setattr(
+        loader_module, "get_embedding_client", lambda: _text_only_embedding_client()
+    )
+    documents = asyncio.run(LlamaIndexDocumentLoader().load([str(pdf_path)]))
+    assert calls == [("scan.pdf", None), ("scan.pdf", "liteparse")]
+    assert [item.text for item in documents] == ["Recovered scan"]
