@@ -565,7 +565,9 @@ class LearningService:
             if kp_type is not None and scheduler is not None:
                 state = progress.repetition_states.get(
                     knowledge_point_id
-                ) or scheduler.get_initial_state(kp_type)
+                ) or scheduler.get_initial_state(
+                    kp_type, desired_retention=progress.desired_retention
+                )
                 progress.repetition_states[knowledge_point_id] = state
                 scheduler.schedule_review(state, kp_type, evidence)
                 progress.review_queue = scheduler.build_review_queue(progress)
@@ -1385,7 +1387,12 @@ class LearningService:
             progress.repetition_states.pop(kp_id, None)
         elif events:
             progress.repetition_states[kp_id] = scheduler.replay(
-                kp_type, sorted(events, key=lambda item: item.timestamp)
+                kp_type,
+                # Live transitions follow durable append order. A linked
+                # assessment can arrive after a newer one with an older source
+                # timestamp; sorting it here would make repair diverge (#1541).
+                events,
+                desired_retention=progress.desired_retention,
             )
         else:
             synthesized = [
@@ -1403,7 +1410,9 @@ class LearningService:
                     start=1,
                 )
             ]
-            progress.repetition_states[kp_id] = scheduler.replay(kp_type, synthesized)
+            progress.repetition_states[kp_id] = scheduler.replay(
+                kp_type, synthesized, desired_retention=progress.desired_retention
+            )
         progress.review_queue = scheduler.build_review_queue(progress)
 
     def repair_question(
@@ -1790,7 +1799,9 @@ class LearningService:
         kp_type = progress.knowledge_types.get(kp_id)
         if kp_type is not None and scheduler is not None:
             state = progress.repetition_states.get(kp_id) or scheduler.get_initial_state(
-                kp_type, now=review_evidence.timestamp
+                kp_type,
+                now=review_evidence.timestamp,
+                desired_retention=progress.desired_retention,
             )
             progress.repetition_states[kp_id] = state
             scheduler.schedule_review(

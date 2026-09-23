@@ -7437,6 +7437,12 @@
             "title": "Source Anchor",
             "type": "string"
           },
+          "submission_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Submission Id",
+            "type": "string"
+          },
           "turn_id": {
             "default": "",
             "title": "Turn Id",
@@ -7478,6 +7484,12 @@
           "question_id": {
             "default": "",
             "title": "Question Id",
+            "type": "string"
+          },
+          "submission_id": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Submission Id",
             "type": "string"
           },
           "user_answer": {
@@ -8252,6 +8264,22 @@
           "rating"
         ],
         "title": "ReviewRequest",
+        "type": "object"
+      },
+      "ReviewSettingsRequest": {
+        "description": "A per-path recall target; higher values schedule shorter intervals.",
+        "properties": {
+          "desired_retention": {
+            "maximum": 0.99,
+            "minimum": 0.7,
+            "title": "Desired Retention",
+            "type": "number"
+          }
+        },
+        "required": [
+          "desired_retention"
+        ],
+        "title": "ReviewSettingsRequest",
         "type": "object"
       },
       "RoundSummaryRequest": {
@@ -27559,6 +27587,158 @@
           }
         },
         "summary": "Set Learner Override",
+        "tags": [
+          "mastery-path"
+        ]
+      }
+    },
+    "/api/mastery-paths/topics/{path_id}/review-settings": {
+      "get": {
+        "operationId": "get_review_settings_api_mastery_paths_topics__path_id__review_settings_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path_id",
+            "required": true,
+            "schema": {
+              "title": "Path Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Review Settings",
+        "tags": [
+          "mastery-path"
+        ]
+      },
+      "put": {
+        "operationId": "update_review_settings_api_mastery_paths_topics__path_id__review_settings_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "path_id",
+            "required": true,
+            "schema": {
+              "title": "Path Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Review Settings",
         "tags": [
           "mastery-path"
         ]

@@ -73,10 +73,17 @@ def _rag_sources(result: dict[str, Any], *, query: str, kb_name: str) -> list[di
     LightRAG-server pipelines). Forward those so a grounded claim is traceable
     to the chunk / entity / report behind it; without this the tool reported
     only an echo of its own query (issue #694). ``type``/``kb_name`` are kept on
-    every entry so consumers that key on them still work, and an engine that
-    surfaces no provenance still yields the echo rather than nothing.
+    every entry so consumers that key on them still work. Only a successful
+    non-empty answer may use the query echo as a fallback; an empty or failed
+    search has no source to cite (issue #1500).
     """
     retrieved = [item for item in (result.get("sources") or []) if isinstance(item, dict)]
+    if not retrieved and (
+        result.get("error_type")
+        or result.get("needs_reindex")
+        or not (result.get("answer") or result.get("content"))
+    ):
+        return []
     if not retrieved:
         return [{"type": "rag", "query": query, "kb_name": kb_name}]
     return [{"type": "rag", "kb_name": kb_name, **item} for item in retrieved]
@@ -124,7 +131,12 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             **extra_kwargs,
         )
         content = result.get("answer") or result.get("content", "")
-        if not content and not result.get("error_type") and not result.get("sources"):
+        failed = bool(result.get("error_type") or result.get("needs_reindex"))
+        if not content and result.get("error_type"):
+            content = f"Knowledge base '{kb_name}' search failed ({result['error_type']})."
+        elif not content and result.get("needs_reindex"):
+            content = f"Knowledge base '{kb_name}' needs reindexing before it can be searched."
+        elif not content and not result.get("sources"):
             content = (
                 f"No matching content was found in knowledge base '{kb_name}'. "
                 "The search completed successfully."
@@ -133,6 +145,7 @@ class RAGTool(_PromptHintsMixin, BaseTool):
             content=content,
             sources=_rag_sources(result, query=query, kb_name=kb_name),
             metadata=result,
+            success=not failed,
         )
 
 

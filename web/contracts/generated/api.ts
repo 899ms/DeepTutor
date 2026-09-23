@@ -3564,6 +3564,24 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/mastery-paths/topics/{path_id}/review-settings": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /** Get Review Settings */
+    readonly get: operations["get_review_settings_api_mastery_paths_topics__path_id__review_settings_get"];
+    /** Update Review Settings */
+    readonly put: operations["update_review_settings_api_mastery_paths_topics__path_id__review_settings_put"];
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/mastery-paths/topics/{path_id}/sessions": {
     readonly parameters: {
       readonly query?: never;
@@ -13742,6 +13760,11 @@ export interface components {
        */
       readonly source_anchor: string;
       /**
+       * Submission Id
+       * @default
+       */
+      readonly submission_id: string;
+      /**
        * Turn Id
        * @default
        */
@@ -13762,6 +13785,11 @@ export interface components {
        * @default
        */
       readonly question_id: string;
+      /**
+       * Submission Id
+       * @default
+       */
+      readonly submission_id: string;
       /**
        * User Answer
        * @default
@@ -14095,6 +14123,14 @@ export interface components {
       readonly self_report: boolean;
       /** Version */
       readonly version: number;
+    };
+    /**
+     * ReviewSettingsRequest
+     * @description A per-path recall target; higher values schedule shorter intervals.
+     */
+    readonly ReviewSettingsRequest: {
+      /** Desired Retention */
+      readonly desired_retention: number;
     };
     /** RoundSummaryRequest */
     readonly RoundSummaryRequest: {
@@ -16229,6 +16265,8 @@ export type SchemaResolveRequest = components["schemas"]["ResolveRequest"];
 export type SchemaResumeBookRequest =
   components["schemas"]["ResumeBookRequest"];
 export type SchemaReviewRequest = components["schemas"]["ReviewRequest"];
+export type SchemaReviewSettingsRequest =
+  components["schemas"]["ReviewSettingsRequest"];
 export type SchemaRoundSummaryRequest =
   components["schemas"]["RoundSummaryRequest"];
 export type SchemaRunStartRequest = components["schemas"]["RunStartRequest"];
@@ -23760,6 +23798,80 @@ export interface operations {
     readonly requestBody: {
       readonly content: {
         readonly "application/json": components["schemas"]["LearnerOverrideRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly get_review_settings_api_mastery_paths_topics__path_id__review_settings_get: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly path_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly update_review_settings_api_mastery_paths_topics__path_id__review_settings_put: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly path_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["ReviewSettingsRequest"];
       };
     };
     readonly responses: {

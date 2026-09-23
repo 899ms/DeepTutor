@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import json
 from pathlib import Path
 
@@ -185,8 +186,15 @@ def test_empty_provider_kb_bootstraps_on_first_upload(
         def __init__(self, *, kb_base_dir: str) -> None:
             assert kb_base_dir == str(tmp_path)
 
-        async def initialize(self, *, kb_name: str, file_paths: list[str]) -> bool:
+        async def initialize(
+            self,
+            *,
+            kb_name: str,
+            file_paths: list[str],
+            indexed_file_callback: Callable[[list[str]], None],
+        ) -> bool:
             initialized.append((kb_name, file_paths))
+            indexed_file_callback(file_paths)
             return True
 
         def _resolve_provider(self, _kb_name: str) -> str:
@@ -236,6 +244,48 @@ def test_document_adder_unwritable_kb_is_not_reported_as_uninitialized(
         DocumentAdder(kb_name="Medicine", base_dir=str(tmp_path), rag_provider="llamaindex")
 
     assert "not initialized" not in str(caught.value)
+
+
+def test_empty_kb_bootstrap_hashes_only_files_confirmed_by_index(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from deeptutor.knowledge import add_documents as add_module
+
+    raw_dir = tmp_path / "kb" / "raw"
+    raw_dir.mkdir(parents=True)
+    indexed = raw_dir / "indexed.txt"
+    skipped = raw_dir / "skipped.txt"
+    indexed.write_text("searchable", encoding="utf-8")
+    skipped.write_text("", encoding="utf-8")
+
+    class PartialIndexService:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        async def initialize(self, *_args, **kwargs) -> bool:
+            kwargs["indexed_file_callback"]([str(indexed)])
+            return True
+
+        def _resolve_provider(self, _name: str) -> str:
+            return "llamaindex"
+
+    statuses: list[dict] = []
+    manager = type(
+        "Manager", (), {"update_kb_status": lambda _self, **kwargs: statuses.append(kwargs)}
+    )()
+    monkeypatch.setattr(add_module, "RAGService", PartialIndexService)
+
+    count = asyncio.run(
+        add_module._bootstrap_index_from_files(
+            "kb", [str(indexed), str(skipped)], str(tmp_path), manager
+        )
+    )
+
+    metadata = json.loads((tmp_path / "kb" / "metadata.json").read_text(encoding="utf-8"))
+    assert count == 1
+    assert set(metadata["file_hashes"]) == {"indexed.txt"}
+    assert metadata["last_indexed_count"] == 1
+    assert statuses[-1]["progress"]["indexed_count"] == 1
 
 
 def test_process_new_documents_returns_failures_without_marking_processed(

@@ -1,8 +1,17 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const webRoot = process.cwd();
 const read = (...parts: string[]) =>
@@ -110,6 +119,54 @@ test("the build wrapper restores every generated checked-in input", () => {
     /finally\s*{\s*if \(buildTsconfigPath\) rmSync/,
     "generated inputs must be restored even when the build fails",
   );
+});
+
+test("a standalone build carries client chunks and public assets with a custom dist directory", () => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "deeptutor-standalone-"));
+  const distDir = ".next-standalone-repro";
+  const distRoot = path.join(fixture, distDir);
+  const standalone = path.join(distRoot, "standalone");
+  try {
+    mkdirSync(path.join(distRoot, "static", "chunks"), { recursive: true });
+    mkdirSync(path.join(fixture, "public", "images"), { recursive: true });
+    mkdirSync(standalone, { recursive: true });
+    writeFileSync(path.join(standalone, "server.js"), "// server");
+    writeFileSync(path.join(distRoot, "static", "chunks", "app.js"), "// client");
+    writeFileSync(path.join(fixture, "public", "images", "logo.svg"), "<svg />");
+
+    const moduleUrl = pathToFileURL(
+      path.join(webRoot, "scripts", "build.mjs"),
+    ).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { packageStandaloneAssets } from ${JSON.stringify(moduleUrl)};
+packageStandaloneAssets(process.argv[1], process.argv[2]);`,
+        fixture,
+        distDir,
+      ],
+      { cwd: webRoot, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      readFileSync(
+        path.join(standalone, distDir, "static", "chunks", "app.js"),
+        "utf8",
+      ),
+      "// client",
+    );
+    assert.equal(
+      readFileSync(
+        path.join(standalone, "public", "images", "logo.svg"),
+        "utf8",
+      ),
+      "<svg />",
+    );
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });
 
 test("the standalone bundle is rooted where the Python launcher expects it", () => {

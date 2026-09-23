@@ -1,7 +1,5 @@
 "use client";
 
-import { browserStorage } from "@/shared/storage";
-
 import {
   Fragment,
   useCallback,
@@ -11,15 +9,9 @@ import {
   useState,
 } from "react";
 import {
-  ALargeSmall,
   ChevronLeft,
   ChevronRight,
   Loader2,
-  Minus,
-  Plus,
-  RotateCcw,
-  Rows3,
-  SunMoon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import RichMarkdownRenderer from "@/components/common/RichMarkdownRenderer";
@@ -35,11 +27,12 @@ import {
   DEFAULT_LINE_WIDTH,
   DEFAULT_READER_DISPLAY_PREFERENCES,
   MAX_FONT_SIZE,
-  MAX_LINE_WIDTH,
   MIN_FONT_SIZE,
-  MIN_LINE_WIDTH,
-  normaliseReaderDisplayPreferences,
+  loadReaderDisplayPreferences,
   readerDisplayShortcut,
+  saveReaderDisplayPreferences,
+  type EpubSpreadMode,
+  type ReaderDisplayPreferences,
   type ReaderTheme,
 } from "@/lib/reading-display-preferences";
 import {
@@ -55,6 +48,7 @@ import {
 } from "@/lib/reading-inline-markdown";
 import { toRecogitoTextAnnotation } from "@/lib/reading-w3c-annotations";
 import type { JumpRequest, SelectionPayload } from "./PdfDocumentView";
+import { PreferenceButton, ReaderDisplayControls } from "./ReaderDisplayControls";
 
 const COLOR_INK: Record<string, string> = {
   yellow: "250 220 90",
@@ -63,9 +57,6 @@ const COLOR_INK: Record<string, string> = {
   pink: "250 161 199",
   purple: "199 174 250",
 };
-
-const READER_PREFS_KEY = "dt.reader.textPreferences";
-const LINE_WIDTH_STEPS = [48, 64, 84, 104];
 
 export interface TextUnitViewProps {
   materialId: string;
@@ -130,50 +121,34 @@ export function TextUnitView({
   const [lineWidth, setLineWidth] = useState(DEFAULT_LINE_WIDTH);
   const [serif, setSerif] = useState(true);
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>("auto");
+  const [spreadMode, setSpreadMode] = useState<EpubSpreadMode>("none");
   const isWebMarkdown = contentFormat === "web_markdown";
   // Sepia and Night are whole-surface paper: a sheet drawn on top of them
   // would be a second, differently coloured page inside the first.
   const paperSheet = readerTheme === "auto";
 
   useEffect(() => {
-    try {
-      const value = normaliseReaderDisplayPreferences(
-        JSON.parse(browserStorage.readRaw("local", READER_PREFS_KEY) || "{}"),
-      );
-      setFontSize(value.fontSize);
-      setLineWidth(value.lineWidth);
-      setSerif(value.serif);
-      setReaderTheme(value.readerTheme);
-    } catch {
-      // Invalid or unavailable local storage falls back to readable defaults.
-    }
+    const value = loadReaderDisplayPreferences();
+    setFontSize(value.fontSize);
+    setLineWidth(value.lineWidth);
+    setSerif(value.serif);
+    setReaderTheme(value.readerTheme);
+    setSpreadMode(value.spreadMode);
   }, []);
 
   const updatePreferences = useCallback(
     (
-      next: Partial<{
-        fontSize: number;
-        lineWidth: number;
-        serif: boolean;
-        readerTheme: ReaderTheme;
-      }>,
+      next: Partial<ReaderDisplayPreferences>,
     ) => {
-      const merged = { fontSize, lineWidth, serif, readerTheme, ...next };
+      const merged = { fontSize, lineWidth, serif, readerTheme, spreadMode, ...next };
       setFontSize(merged.fontSize);
       setLineWidth(merged.lineWidth);
       setSerif(merged.serif);
       setReaderTheme(merged.readerTheme);
-      try {
-        browserStorage.writeRaw(
-          "local",
-          READER_PREFS_KEY,
-          JSON.stringify(merged),
-        );
-      } catch {
-        // Preferences still apply for the current session.
-      }
+      setSpreadMode(merged.spreadMode);
+      saveReaderDisplayPreferences(merged);
     },
-    [fontSize, lineWidth, readerTheme, serif],
+    [fontSize, lineWidth, readerTheme, serif, spreadMode],
   );
 
   const changeFontSize = useCallback(
@@ -188,12 +163,6 @@ export function TextUnitView({
   const resetPreferences = useCallback(() => {
     updatePreferences(DEFAULT_READER_DISPLAY_PREFERENCES);
   }, [updatePreferences]);
-
-  const cycleLineWidth = useCallback(() => {
-    const nextWidth =
-      LINE_WIDTH_STEPS.find((width) => width > lineWidth) ?? MIN_LINE_WIDTH;
-    updatePreferences({ lineWidth: nextWidth });
-  }, [lineWidth, updatePreferences]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -524,57 +493,10 @@ export function TextUnitView({
           position is the header's to state, since that is the one line that is
           there in every render mode. What is left here is what you can *do*. */}
       <div className="flex items-center justify-between gap-2 overflow-x-auto border-b border-[var(--border)] px-2 py-2 sm:px-3">
-        <div className="flex shrink-0 items-center gap-0.5">
-          <PreferenceButton
-            label={t("Smaller text ({{percent}}%)", {
-              percent: Math.round((fontSize / 16) * 100),
-            })}
-            icon={Minus}
-            disabled={fontSize <= MIN_FONT_SIZE}
-            onClick={() => changeFontSize(fontSize - 1)}
-          />
-          <PreferenceButton
-            label={t("Larger text ({{percent}}%)", {
-              percent: Math.round((fontSize / 16) * 100),
-            })}
-            icon={Plus}
-            disabled={fontSize >= MAX_FONT_SIZE}
-            onClick={() => changeFontSize(fontSize + 1)}
-          />
-          <PreferenceButton
-            label={serif ? t("Use sans-serif font") : t("Use serif font")}
-            icon={ALargeSmall}
-            active={!serif}
-            onClick={() => updatePreferences({ serif: !serif })}
-          />
-          <PreferenceButton
-            label={t("Change line width ({{width}} characters)", {
-              width: lineWidth,
-            })}
-            icon={Rows3}
-            onClick={cycleLineWidth}
-          />
-          <PreferenceButton
-            label={t("Change reading theme")}
-            icon={SunMoon}
-            active={readerTheme !== "auto"}
-            onClick={() =>
-              updatePreferences({
-                readerTheme:
-                  readerTheme === "auto"
-                    ? "sepia"
-                    : readerTheme === "sepia"
-                      ? "night"
-                      : "auto",
-              })
-            }
-          />
-          <PreferenceButton
-            label={t("Reset reading display")}
-            icon={RotateCcw}
-            onClick={resetPreferences}
-          />
-        </div>
+        <ReaderDisplayControls
+          preferences={{ fontSize, lineWidth, serif, readerTheme, spreadMode }}
+          onChange={updatePreferences}
+        />
         <div className="flex shrink-0 items-center gap-0.5">
           <PreferenceButton
             label={t("Previous {{unit}}", { unit: t(unitLabel(unit)) })}
@@ -691,38 +613,6 @@ export function TextUnitView({
         )}
       </div>
     </div>
-  );
-}
-
-function PreferenceButton({
-  label,
-  icon: Icon,
-  active = false,
-  disabled = false,
-  onClick,
-}: {
-  label: string;
-  icon: typeof Minus;
-  active?: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active}
-      disabled={disabled}
-      onClick={onClick}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition hover:bg-[var(--muted)] disabled:opacity-35 disabled:hover:bg-transparent ${
-        active
-          ? "text-[var(--foreground)]"
-          : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-      }`}
-    >
-      <Icon size={15} />
-    </button>
   );
 }
 

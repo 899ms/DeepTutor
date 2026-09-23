@@ -123,6 +123,22 @@ def _raw_hash_key(file_path: Path, raw_dir: Path) -> str:
         return file_path.name
 
 
+def _file_hash(file_path: Path) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(file_path, "rb") as handle:
+        for block in iter(lambda: handle.read(65536), b""):
+            sha256_hash.update(block)
+    return sha256_hash.hexdigest()
+
+
+def hashes_for_indexed_files(file_paths: list[str], raw_dir: Path) -> dict[str, str]:
+    """Hash source files already confirmed in an index, keyed by their raw path."""
+    return {
+        _raw_hash_key(Path(file_path), raw_dir): _file_hash(Path(file_path))
+        for file_path in file_paths
+    }
+
+
 def remove_raw_document(kb_dir: Path, file_path: Path) -> RawDocumentRemoval:
     """Delete one staged raw file and drop its indexed-hash record.
 
@@ -246,11 +262,7 @@ class DocumentAdder:
         return resolve_bound_provider(self.base_dir, self.kb_name)
 
     def _get_file_hash(self, file_path: Path) -> str:
-        sha256_hash = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(65536), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
+        return _file_hash(file_path)
 
     def get_ingested_hashes(self) -> dict[str, str]:
         if self.metadata_file.exists():
@@ -526,25 +538,34 @@ async def _bootstrap_index_from_files(
     raw_dir = kb_dir / "raw"
     metadata_file = kb_dir / "metadata.json"
 
-    success = await rag_service.initialize(kb_name=kb_name, file_paths=source_files)
+    requested = {str(Path(path).resolve()): str(Path(path)) for path in source_files}
+    confirmed: set[str] = set()
+
+    def on_indexed_file(paths: list[str]) -> None:
+        for path in paths:
+            canonical = str(Path(path).resolve())
+            if canonical in requested:
+                confirmed.add(canonical)
+
+    success = await rag_service.initialize(
+        kb_name=kb_name,
+        file_paths=source_files,
+        indexed_file_callback=on_indexed_file,
+    )
     if not success:
         raise RuntimeError(
             f"Failed to initialize index for KB '{kb_name}' from {len(source_files)} file(s)"
         )
 
-    indexed = len(source_files)
+    indexed_files = [requested[path] for path in sorted(confirmed)]
+    indexed = len(indexed_files)
     provider = rag_service._resolve_provider(kb_name)
     try:
         # Record hashes so future syncs detect unchanged files.
         metadata = _read_metadata(metadata_file)
-        hashes = metadata.setdefault("file_hashes", {})
-        for fpath_str in source_files:
-            fpath = Path(fpath_str)
-            sha = hashlib.sha256()
-            with open(fpath, "rb") as fh:
-                for block in iter(lambda: fh.read(65536), b""):
-                    sha.update(block)
-            hashes[_raw_hash_key(fpath, raw_dir)] = sha.hexdigest()
+        metadata.setdefault("file_hashes", {}).update(
+            hashes_for_indexed_files(indexed_files, raw_dir)
+        )
         metadata["rag_provider"] = provider
         metadata["needs_reindex"] = False
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

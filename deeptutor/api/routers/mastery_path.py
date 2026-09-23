@@ -197,6 +197,12 @@ class RenamePathRequest(BaseModel):
     name: str = ""
 
 
+class ReviewSettingsRequest(BaseModel):
+    """A per-path recall target; higher values schedule shorter intervals."""
+
+    desired_retention: float = Field(..., ge=0.7, le=0.99, allow_inf_nan=False)
+
+
 class ChapterImport(BaseModel):
     title: str
     knowledge_points: list[str] = []
@@ -323,6 +329,8 @@ def _review_queue(progress, *, now: float | None = None) -> list[dict]:
             "due": task.due_at <= moment,
             "forgetting_risk": round(task.forgetting_risk, 3),
             "reason": task.reason,
+            "evidence_source": task.evidence_source,
+            "evidence_id": task.evidence_id,
             "stability": round(task.state.stability, 3),
             "retrievability": round(scheduler.retrievability(task.state, now=moment), 3),
             "desired_retention": task.state.desired_retention,
@@ -391,6 +399,10 @@ def _topic_payload_from_snapshot(
         ).to_dict(),
         "map": learning_policy.map_summary(projected, now=moment),
         "reviews": _review_queue(projected, now=moment),
+        "review_settings": {
+            "desired_retention": progress.desired_retention,
+            "scope": "path",
+        },
         # Who this goal is for. Null until intake has happened, which is also
         # what the dashboard renders as "not asked yet".
         "learner_profile": (
@@ -573,6 +585,45 @@ async def create_topic(body: ConfirmTopicRequest):
 @router.get("/topics/{path_id}")
 async def get_topic(path_id: str):
     _validate_book_id(path_id)
+    return await asyncio.to_thread(_topic_payload, LearningStore(), path_id)
+
+
+@router.get("/topics/{path_id}/review-settings")
+async def get_review_settings(path_id: str):
+    _validate_book_id(path_id)
+    progress = await asyncio.to_thread(LearningStore().load, path_id)
+    if progress is None:
+        raise HTTPException(status_code=404, detail="Mastery topic not found")
+    return {"desired_retention": progress.desired_retention, "scope": "path"}
+
+
+@router.put("/topics/{path_id}/review-settings")
+async def update_review_settings(path_id: str, body: ReviewSettingsRequest):
+    _validate_book_id(path_id)
+    if not await asyncio.to_thread(LearningStore().exists, path_id):
+        raise HTTPException(status_code=404, detail="Mastery topic not found")
+    async with _exclusive_path_mutation(path_id):
+        store = LearningStore()
+
+        def update(tx):
+            from deeptutor.learning.scheduler import SpacedRepetitionScheduler
+
+            if tx.progress.desired_retention == body.desired_retention and all(
+                state.desired_retention == body.desired_retention
+                for state in tx.progress.repetition_states.values()
+            ):
+                return
+            SpacedRepetitionScheduler().set_desired_retention(tx.progress, body.desired_retention)
+            tx.touch()
+            tx.emit(
+                "review.settings_changed",
+                {"desired_retention": tx.progress.desired_retention},
+            )
+
+        try:
+            await asyncio.to_thread(store.mutate, path_id, update)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Mastery topic not found") from exc
     return await asyncio.to_thread(_topic_payload, LearningStore(), path_id)
 
 
