@@ -5040,5 +5040,9 @@
   "No reading progress yet": "还没有阅读进度",
   "Furthest reading progress": "最远阅读进度",
   "No learning actions yet": "还没有学习操作",
-  "Locator": "位置"
+  "Locator": "位置",
+  "Search materials and contents": "搜索资料和目录",
+  "No matching materials or contents.": "没有匹配的资料或目录。",
+  "Fullscreen learning": "全屏学习",
+  "Exit learning mode": "退出学习模式"
 }

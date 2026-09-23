@@ -5040,5 +5040,9 @@
   "No reading progress yet": "No reading progress yet",
   "Furthest reading progress": "Furthest reading progress",
   "No learning actions yet": "No learning actions yet",
-  "Locator": "Locator"
+  "Locator": "Locator",
+  "Search materials and contents": "Search materials and contents",
+  "No matching materials or contents.": "No matching materials or contents.",
+  "Fullscreen learning": "Fullscreen learning",
+  "Exit learning mode": "Exit learning mode"
 }
