@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Database,
   FileText,
+  FolderSync,
   Github,
   Globe,
   Layers,
@@ -40,6 +41,7 @@ import KbDocumentsSection from "./KbDocumentsSection";
 import KbIndexVersionsSection from "./KbIndexVersionsSection";
 import KbSettingsSection from "./KbSettingsSection";
 import KbGitHubSourcesSection from "./KbGitHubSourcesSection";
+import KbLinkedFoldersSection from "./KbLinkedFoldersSection";
 import KbWebSourcesSection from "./KbWebSourcesSection";
 import KbMarginNoteDevicesSection from "./KbMarginNoteDevicesSection";
 import KnowledgeEngineIcon, {
@@ -75,6 +77,7 @@ const SECTION_CHROME: Record<
 > = {
   files: { label: "Files", Icon: FileText },
   add: { label: "Add documents", Icon: Upload },
+  folders: { label: "Linked folders", Icon: FolderSync },
   github: { label: "GitHub", Icon: Github },
   web: { label: "Web", Icon: Globe },
   versions: { label: "Index versions", Icon: Layers },
@@ -325,6 +328,13 @@ export default function KnowledgeBaseDetail({
               )}
               {activeSection === "github" && (
                 <KbGitHubSourcesSection kbName={knowledgeBaseRef(kb)} />
+              )}
+              {activeSection === "folders" && (
+                <KbLinkedFoldersSection
+                  key={kb.name}
+                  kbName={kb.name}
+                  readOnly={kb.read_only === true}
+                />
               )}
               {activeSection === "web" && (
                 <KbWebSourcesSection kbName={knowledgeBaseRef(kb)} />

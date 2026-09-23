@@ -12050,6 +12050,8 @@ export interface components {
       readonly file_count: number;
       /** Id */
       readonly id: string;
+      /** Last Sync */
+      readonly last_sync?: string | null;
       /** Path */
       readonly path: string;
     };
