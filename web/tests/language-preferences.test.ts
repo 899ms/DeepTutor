@@ -11,6 +11,7 @@ test("the locale registry accepts every supported language", () => {
   for (const { code } of APP_LANGUAGES) assert.equal(isAppLanguage(code), true);
   assert.equal(isAppLanguage("de"), false);
   assert.equal(normalizeLanguage("uk-UA"), "uk");
+  assert.equal(normalizeLanguage("fr-FR"), "fr");
 });
 
 test("response language remains independent from the interface language", () => {

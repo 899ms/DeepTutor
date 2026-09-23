@@ -74,14 +74,15 @@ def _normalize_language(language: Any, default: str = "en") -> str:
         language = default
 
     if isinstance(language, str):
-        s = language.lower().strip()
-        if s in {"en", "english"}:
+        s = language.lower().strip().replace("_", "-")
+        base = s.split("-", 1)[0]
+        if s == "english" or base == "en":
             return "en"
-        if s in {"zh", "chinese", "cn"}:
+        if s == "chinese" or base in {"zh", "cn"}:
             return "zh"
-        if s in {"fr", "french"}:
+        if s == "french" or base == "fr":
             return "fr"
-        if s in {"uk", "ukrainian", "ua"}:
+        if s == "ukrainian" or base in {"uk", "ua"}:
             return "uk"
 
     # Fall back to default

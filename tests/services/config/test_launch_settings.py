@@ -46,7 +46,13 @@ def test_launch_settings_reads_ports_from_system_json_and_ignores_env_json(
 
 @pytest.mark.parametrize(
     ("stored_language", "expected"),
-    [("french", "fr"), ("ukrainian", "uk"), ("uk_UA", "uk")],
+    [
+        ("french", "fr"),
+        ("fr-FR", "fr"),
+        ("ukrainian", "uk"),
+        ("uk_UA", "uk"),
+        ("uk-UA", "uk"),
+    ],
 )
 def test_launch_settings_reads_supported_languages_from_interface_json(
     monkeypatch, tmp_path: Path, stored_language: str, expected: str
