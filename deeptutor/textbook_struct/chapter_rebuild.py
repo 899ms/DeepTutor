@@ -127,7 +127,7 @@ def assign_page_ranges(chapters: list[Chapter], *, page_count: int) -> list[Chap
     chapters.sort(key=lambda chapter: chapter.page_idx)
     for i, chapter in enumerate(chapters):
         chapter.end_page_idx = (
-            chapters[i + 1].page_idx
+            max(chapters[i + 1].page_idx, chapter.page_idx + 1)
             if i + 1 < len(chapters)
             else max(page_count, chapter.page_idx + 1)
         )

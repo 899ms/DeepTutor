@@ -10,7 +10,8 @@ footer path.
 
 from __future__ import annotations
 
-from deeptutor.textbook_struct import rebuild_from_headers_level, verify_offset
+from deeptutor.textbook_struct import Chapter, rebuild_from_headers_level, verify_offset
+from deeptutor.textbook_struct.chapter_rebuild import assign_page_ranges
 from deeptutor.textbook_struct.page_headers import (
     normalize_header_chapter,
     page_facts,
@@ -127,3 +128,11 @@ def test_rebuild_level_unit_filter_drops_other_levels() -> None:
     }
     chapters = rebuild_from_headers_level(layout, unit="节")
     assert [c.title for c in chapters] == ["第1节 函数的概念", "第2节 函数的表示法"]
+
+
+def test_chapters_starting_on_one_page_both_include_that_page() -> None:
+    chapters = [Chapter("A", 2, []), Chapter("B", 2, [])]
+    assert [chapter.end_page_idx for chapter in assign_page_ranges(chapters, page_count=3)] == [
+        3,
+        3,
+    ]
