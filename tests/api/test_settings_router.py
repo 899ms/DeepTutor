@@ -615,6 +615,13 @@ def test_llm_provider_choices_include_atlascloud() -> None:
     assert llm["atlascloud"]["base_url"] == "https://api.atlascloud.ai/v1"
 
 
+def test_llm_provider_choices_include_unifically() -> None:
+    llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
+
+    assert llm["unifically"]["label"] == "Unifically"
+    assert llm["unifically"]["base_url"] == "https://api.unifically.com/v1"
+
+
 def test_llm_provider_choices_include_novita() -> None:
     llm = {item["value"]: item for item in settings_router._provider_choices()["llm"]}
 

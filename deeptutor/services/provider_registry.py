@@ -276,6 +276,16 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         default_api_base="https://api.atlascloud.ai/v1",
     ),
     ProviderSpec(
+        name="unifically",
+        keywords=("unifically",),
+        env_key="UNIFICALLY_API_KEY",
+        display_name="Unifically",
+        backend="openai_compat",
+        is_gateway=True,
+        detect_by_base_keyword="unifically",
+        default_api_base="https://api.unifically.com/v1",
+    ),
+    ProviderSpec(
         name="volcengine",
         keywords=("volcengine", "volces", "ark"),
         env_key="OPENAI_API_KEY",
