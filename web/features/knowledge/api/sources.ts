@@ -2,15 +2,19 @@ export {
   addGitHubSource,
   addWebSource,
   linkFolder,
+  cancelWebSourceSync,
   listGitHubSources,
   listLinkedFolders,
   listWebSources,
+  listWebSourceSyncJobs,
   removeGitHubSource,
   removeWebSource,
+  retryWebSourceSync,
   syncGitHubSources,
   syncLinkedFolder,
   syncWebSources,
   unlinkFolder,
+  updateWebSourceSchedule,
 } from "./client";
 
 export type {
@@ -20,6 +24,8 @@ export type {
   GitHubSyncResult,
   LinkedFolderInfo,
   WebSource,
+  WebSourceSchedulePayload,
+  WebSourceSyncJob,
   WebSyncResult,
   WebSyncSourceResult,
 } from "../model/types";

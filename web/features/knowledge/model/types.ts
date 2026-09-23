@@ -33,6 +33,8 @@ export type {
   RagProviderSummary,
   SyncFolderResponse,
   WebSource,
+  WebSourceSchedulePayload,
+  WebSourceSyncJob,
   WebSyncResult,
   WebSyncSourceResult,
   WeKnoraProbe,

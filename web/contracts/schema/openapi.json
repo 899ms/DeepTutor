@@ -177,6 +177,25 @@
         "title": "AddWebSourceRequest",
         "type": "object"
       },
+      "AdminBatchDeleteRequest": {
+        "description": "Usernames for an admin-initiated batch deletion.",
+        "properties": {
+          "usernames": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Usernames",
+            "type": "array"
+          }
+        },
+        "required": [
+          "usernames"
+        ],
+        "title": "AdminBatchDeleteRequest",
+        "type": "object"
+      },
       "AdminCreateUserRequest": {
         "description": "Admin user-creation payload.\n\nA preset configures an ordinary account; it never becomes a third role.",
         "properties": {
@@ -683,6 +702,20 @@
           "operation_id"
         ],
         "title": "AutoMarkResponse",
+        "type": "object"
+      },
+      "Body_admin_import_users_api_auth_users_import_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_admin_import_users_api_auth_users_import_post",
         "type": "object"
       },
       "Body_create_knowledge_base_api_knowledge_bases_post": {
@@ -6114,6 +6147,21 @@
             "title": "Options",
             "type": "object"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "practice": {
             "anyOf": [
               {
@@ -6208,6 +6256,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -6254,7 +6303,6 @@
         },
         "required": [
           "id",
-          "session_id",
           "question",
           "created_at",
           "updated_at"
@@ -8253,6 +8301,54 @@
         "title": "SessionDetail",
         "type": "object"
       },
+      "SessionHandoffCompleteRequest": {
+        "description": "Public request that trades a JWE ticket for the normal cookie.",
+        "properties": {
+          "ticket": {
+            "maxLength": 8192,
+            "minLength": 32,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "title": "SessionHandoffCompleteRequest",
+        "type": "object"
+      },
+      "SessionHandoffCreateRequest": {
+        "description": "Private request that starts a one-time public handoff.",
+        "properties": {
+          "public_origin": {
+            "maxLength": 2048,
+            "minLength": 8,
+            "title": "Public Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_origin"
+        ],
+        "title": "SessionHandoffCreateRequest",
+        "type": "object"
+      },
+      "SessionHandoffExchangeRequest": {
+        "description": "Public request that trades a pairing code for a JWE ticket.",
+        "properties": {
+          "code": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SessionHandoffExchangeRequest",
+        "type": "object"
+      },
       "SessionKeyBody": {
         "properties": {
           "session_key": {
@@ -8480,6 +8576,50 @@
           }
         },
         "title": "SettingsDraftPayload",
+        "type": "object"
+      },
+      "SettingsPresetDraftRequest": {
+        "description": "The current draft envelope submitted alongside a named preset.",
+        "properties": {
+          "catalog": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog"
+          },
+          "extensions": {
+            "additionalProperties": true,
+            "title": "Extensions",
+            "type": "object"
+          }
+        },
+        "title": "SettingsPresetDraftRequest",
+        "type": "object"
+      },
+      "SettingsProfileImportPayload": {
+        "description": "An exported value-free settings profile submitted for review only.",
+        "properties": {
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "schema_version",
+          "profile"
+        ],
+        "title": "SettingsProfileImportPayload",
         "type": "object"
       },
       "SidebarDescriptionUpdate": {
@@ -10158,8 +10298,19 @@
             "anyOf": [
               {
                 "enum": [
+                  "en",
                   "zh",
-                  "en"
+                  "zh-tw",
+                  "ja",
+                  "ko",
+                  "es",
+                  "fr",
+                  "de",
+                  "ru",
+                  "pt",
+                  "it",
+                  "ar",
+                  "pl"
                 ],
                 "type": "string"
               },
@@ -11086,6 +11237,21 @@
             ],
             "title": "Options"
           },
+          "origin_ref": {
+            "default": "",
+            "title": "Origin Ref",
+            "type": "string"
+          },
+          "origin_type": {
+            "default": "conversation",
+            "enum": [
+              "conversation",
+              "external_import",
+              "document_analysis"
+            ],
+            "title": "Origin Type",
+            "type": "string"
+          },
           "quality": {
             "anyOf": [
               {
@@ -11137,6 +11303,7 @@
             "type": "string"
           },
           "session_id": {
+            "default": "",
             "title": "Session Id",
             "type": "string"
           },
@@ -11179,7 +11346,6 @@
           }
         },
         "required": [
-          "session_id",
           "question_id",
           "question"
         ],
@@ -11529,6 +11695,11 @@
             "title": "Added At",
             "type": "string"
           },
+          "auto_sync_enabled": {
+            "default": true,
+            "title": "Auto Sync Enabled",
+            "type": "boolean"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -11586,6 +11757,13 @@
             "title": "Page Count",
             "type": "integer"
           },
+          "sync_interval_hours": {
+            "default": 24,
+            "maximum": 168.0,
+            "minimum": 1.0,
+            "title": "Sync Interval Hours",
+            "type": "integer"
+          },
           "url": {
             "title": "Url",
             "type": "string"
@@ -11596,6 +11774,91 @@
           "url"
         ],
         "title": "WebSourceInfo",
+        "type": "object"
+      },
+      "WebSourceScheduleUpdate": {
+        "properties": {
+          "auto_sync_enabled": {
+            "title": "Auto Sync Enabled",
+            "type": "boolean"
+          },
+          "sync_interval_hours": {
+            "default": 24,
+            "maximum": 168.0,
+            "minimum": 1.0,
+            "title": "Sync Interval Hours",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "auto_sync_enabled"
+        ],
+        "title": "WebSourceScheduleUpdate",
+        "type": "object"
+      },
+      "WebSourceSyncJobInfo": {
+        "properties": {
+          "attempt": {
+            "default": 0,
+            "title": "Attempt",
+            "type": "integer"
+          },
+          "cancel_requested": {
+            "default": false,
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "kb_name": {
+            "title": "Kb Name",
+            "type": "string"
+          },
+          "last_run_at": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Run At"
+          },
+          "next_run_at": {
+            "title": "Next Run At",
+            "type": "integer"
+          },
+          "owner_id": {
+            "title": "Owner Id",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "owner_id",
+          "kb_name",
+          "source_id",
+          "state",
+          "next_run_at"
+        ],
+        "title": "WebSourceSyncJobInfo",
         "type": "object"
       },
       "WhiteboardPinRequest": {
@@ -13077,6 +13340,172 @@
         ]
       }
     },
+    "/api/auth/session-handoff": {
+      "post": {
+        "description": "Create a host-bound, one-time pairing code from the private origin.",
+        "operationId": "create_session_handoff_api_auth_session_handoff_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Session Handoff Api Auth Session Handoff Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session Handoff",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session-handoff/complete": {
+      "post": {
+        "description": "Consume a ticket once and issue the normal HttpOnly session cookie.",
+        "operationId": "complete_session_handoff_api_auth_session_handoff_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Session Handoff Api Auth Session Handoff Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Session Handoff",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session-handoff/exchange": {
+      "post": {
+        "description": "Consume a pairing code and return a short-lived ticket in the response body.",
+        "operationId": "exchange_session_handoff_api_auth_session_handoff_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Exchange Session Handoff Api Auth Session Handoff Exchange Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Session Handoff",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/auth/status": {
       "get": {
         "description": "Return whether auth is enabled and whether the current request is authenticated.",
@@ -13213,7 +13642,7 @@
         ]
       },
       "post": {
-        "description": "Admin-only: create a new user account.\n\nReplaces the public ``/register`` flow once the first admin exists. The\nnew account is always created with role=``user``; admins can promote\nlater via ``PUT /users/{username}/role``.",
+        "description": "Admin-only: create one ordinary user account.",
         "operationId": "admin_create_user_api_auth_users_post",
         "parameters": [
           {
@@ -13284,6 +13713,162 @@
           }
         },
         "summary": "Admin Create User",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/users/batch-delete": {
+      "post": {
+        "description": "Delete selected users and report each outcome separately.",
+        "operationId": "batch_remove_users_api_auth_users_batch_delete_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminBatchDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Batch Remove Users Api Auth Users Batch Delete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Remove Users",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/users/import": {
+      "post": {
+        "description": "Admin-only: provision ordinary users from a CSV file.\n\nThe response is row-oriented so one invalid record does not erase the\ncontext of the valid records around it. Passwords are never returned.",
+        "operationId": "admin_import_users_api_auth_users_import_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_admin_import_users_api_auth_users_import_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Admin Import Users Api Auth Users Import Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Admin Import Users",
         "tags": [
           "auth"
         ]
@@ -23986,6 +24571,84 @@
         ]
       }
     },
+    "/api/knowledge-bases/{kb_name}/web-source-sync": {
+      "get": {
+        "operationId": "get_web_source_sync_jobs_api_knowledge_bases__kb_name__web_source_sync_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WebSourceSyncJobInfo"
+                  },
+                  "title": "Response Get Web Source Sync Jobs Api Knowledge Bases  Kb Name  Web Source Sync Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Web Source Sync Jobs",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
     "/api/knowledge-bases/{kb_name}/web-source/{source_id}": {
       "delete": {
         "operationId": "remove_web_source_api_knowledge_bases__kb_name__web_source__source_id__delete",
@@ -24062,6 +24725,261 @@
           }
         },
         "summary": "Remove Web Source",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/api/knowledge-bases/{kb_name}/web-source/{source_id}/cancel": {
+      "post": {
+        "operationId": "cancel_web_source_sync_api_knowledge_bases__kb_name__web_source__source_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel Web Source Sync",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/api/knowledge-bases/{kb_name}/web-source/{source_id}/retry": {
+      "post": {
+        "operationId": "retry_web_source_sync_api_knowledge_bases__kb_name__web_source__source_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Web Source Sync",
+        "tags": [
+          "knowledge-bases"
+        ]
+      }
+    },
+    "/api/knowledge-bases/{kb_name}/web-source/{source_id}/schedule": {
+      "put": {
+        "operationId": "update_web_source_schedule_api_knowledge_bases__kb_name__web_source__source_id__schedule_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "kb_name",
+            "required": true,
+            "schema": {
+              "title": "Kb Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WebSourceScheduleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSourceInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Web Source Schedule",
         "tags": [
           "knowledge-bases"
         ]
@@ -37344,9 +38262,35 @@
           {
             "in": "query",
             "name": "session_id",
-            "required": true,
+            "required": false,
             "schema": {
+              "default": "",
               "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_type",
+            "required": false,
+            "schema": {
+              "default": "conversation",
+              "enum": [
+                "conversation",
+                "external_import",
+                "document_analysis"
+              ],
+              "title": "Origin Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "origin_ref",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Origin Ref",
               "type": "string"
             }
           },
@@ -47197,6 +48141,295 @@
           }
         },
         "summary": "Update Network Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/presets": {
+      "get": {
+        "description": "List value-free starting points for a reviewable draft.",
+        "operationId": "get_settings_presets_api_settings_presets_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settings Presets",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/presets/{preset_id}/draft": {
+      "post": {
+        "description": "Load a named preset into the existing draft for review.",
+        "operationId": "stage_settings_preset_api_settings_presets__preset_id__draft_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "preset_id",
+            "required": true,
+            "schema": {
+              "title": "Preset Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsPresetDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Stage Settings Preset Api Settings Presets  Preset Id  Draft Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stage Settings Preset",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/profile": {
+      "get": {
+        "description": "Export effective settings with credentials and deployment values removed.",
+        "operationId": "get_settings_profile_api_settings_profile_get",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Settings Profile",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/settings/profile/diff": {
+      "post": {
+        "description": "Review an imported profile without changing effective settings.",
+        "operationId": "diff_settings_profile_api_settings_profile_diff_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingsProfileImportPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Diff Settings Profile",
         "tags": [
           "settings"
         ]

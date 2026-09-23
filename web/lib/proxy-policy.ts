@@ -7,6 +7,7 @@
 // can be unit-tested in the node harness without booting the Next runtime.
 
 export const LOGIN_PATH = "/login";
+export const HANDOFF_PATH = "/handoff";
 export const COOKIE_NAME = "dt_token";
 export const CODEX_CALLBACK_PATH = "/auth/callback";
 export const CODEX_CALLBACK_API_PATH = "/api/auth/openai-codex/callback";
@@ -50,6 +51,7 @@ export function isAuthExempt(pathname: string): boolean {
   return (
     pathname.startsWith(LOGIN_PATH) ||
     pathname.startsWith("/register") ||
+    pathname === HANDOFF_PATH ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon") ||
     STATIC_ASSET.test(pathname)

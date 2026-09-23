@@ -4,8 +4,9 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { APP_LANGUAGES, type AppLanguage } from "@/i18n/init";
-import { SettingRow, SettingSection, SettingsPageHeader } from "./shared";
-import { useUiSettings } from "@/features/settings/store";
+import SettingsPresetsPanel from "@/components/settings/SettingsPresetsPanel";
+import { selectClass, SettingRow, SettingSection, SettingsPageHeader } from "./shared";
+import { RESPONSE_LANGUAGE_OPTIONS, useUiSettings } from "@/features/settings/store";
 import { useSettings } from "@/features/settings/store/SettingsStore";
 
 function LanguageToggle({
@@ -65,13 +66,25 @@ export default function SettingsOverview() {
             "Sets the default language for chat and capability responses.",
           )}
           control={
-            <LanguageToggle
+            <select
               value={responseLanguage}
-              onChange={updateResponseLanguage}
-            />
+              onChange={(event) =>
+                void updateResponseLanguage(
+                  event.target.value as typeof responseLanguage,
+                )
+              }
+              className={`${selectClass} min-w-[160px] pr-8`}
+            >
+              {RESPONSE_LANGUAGE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           }
         />
       </SettingSection>
+      {catalogEditable === true && <SettingsPresetsPanel enabled={true} />}
       {catalogEditable && <SettingSection
         title={t("Set up chat first")}
         description={t("Connect a provider and choose a language model. Other services are optional.")}
