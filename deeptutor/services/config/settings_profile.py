@@ -13,7 +13,14 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .model_catalog import get_model_catalog_service
-from .runtime_settings import RuntimeSettingsService, get_runtime_settings_service
+from .runtime_settings import (
+    DEFAULT_DOCUMENT_PARSING_SETTINGS,
+    DEFAULT_GRAPHRAG_SETTINGS,
+    DEFAULT_LIGHTRAG_SETTINGS,
+    DEFAULT_LLAMAINDEX_SETTINGS,
+    RuntimeSettingsService,
+    get_runtime_settings_service,
+)
 
 PROFILE_SCHEMA_VERSION = "deeptutor.settings-profile/v1"
 
@@ -56,7 +63,38 @@ _COORDINATION_FIELDS = (
     "recovery_interval_seconds",
     "stream_retention_seconds",
 )
-_CATALOG_EXCLUDED_FIELDS = {"base_url"}
+# Export explicit catalog fields. Catalog profiles and models accept extension
+# keys, so copying unknown fields would make a future credential field public.
+_CATALOG_PROFILE_FIELDS = (
+    "id",
+    "name",
+    "binding",
+    "provider",
+    "connection_id",
+    "api_format",
+    "wire_api",
+    "api_version",
+    "provider_only",
+)
+_CATALOG_MODEL_FIELDS = (
+    "id",
+    "name",
+    "model",
+    "dimension",
+    "supported_dimensions",
+    "capabilities",
+    "voice",
+    "response_format",
+    "size",
+    "quality",
+    "style",
+    "aspect_ratio",
+    "duration",
+    "resolution",
+    "language",
+    "sample_rate",
+    "speed",
+)
 
 
 class SettingsProfileError(ValueError):
@@ -65,7 +103,11 @@ class SettingsProfileError(ValueError):
 
 def _is_secret_field(name: str) -> bool:
     normalized = name.lower()
-    return any(hint in normalized for hint in _SECRET_FIELD_HINTS)
+    return (
+        normalized in {"token", "proxy"}
+        or normalized.endswith("_token")
+        or any(hint in normalized for hint in _SECRET_FIELD_HINTS)
+    )
 
 
 def _is_deployment_field(name: str) -> bool:
@@ -108,19 +150,17 @@ def _selected_fields(settings: dict[str, Any], fields: tuple[str, ...]) -> dict[
 
 
 def _catalog_profile(profile: dict[str, Any]) -> dict[str, Any]:
-    public: dict[str, Any] = {}
-    for key, value in profile.items():
-        if key in _CATALOG_EXCLUDED_FIELDS:
-            continue
-        if key == "extra_headers":
-            headers = value if isinstance(value, dict) else {}
-            public[key] = {
-                header: {"present": _value_presence(item)} for header, item in headers.items()
-            }
-        elif _is_secret_field(key):
-            public[key] = {"present": _value_presence(value)}
-        else:
-            public[key] = _public_value(value)
+    public = _selected_fields(profile, _CATALOG_PROFILE_FIELDS)
+    for key in ("api_key", "token", "proxy", "extra_headers"):
+        if key in profile:
+            public[key] = {"present": _value_presence(profile[key])}
+    models = profile.get("models")
+    if isinstance(models, list):
+        public["models"] = [
+            _selected_fields(model, _CATALOG_MODEL_FIELDS)
+            for model in models
+            if isinstance(model, dict)
+        ]
     return public
 
 
@@ -153,10 +193,11 @@ def _document_parsing_profile(settings: dict[str, Any]) -> dict[str, Any]:
         if name == "tika":
             public_engines[name] = {"server_url_present": _value_presence(engine.get("server_url"))}
             continue
+        known = DEFAULT_DOCUMENT_PARSING_SETTINGS["engines"].get(name, {})
         public = {
-            key: deepcopy(value)
-            for key, value in engine.items()
-            if not _is_secret_field(key) and not _is_deployment_field(key)
+            key: deepcopy(engine[key])
+            for key in known
+            if key in engine and not _is_secret_field(key) and not _is_deployment_field(key)
         }
         public_engines[name] = public
     return {
@@ -192,9 +233,12 @@ def _effective_profile(
             "document_parsing": _document_parsing_profile(
                 service.load_document_parsing(include_process_overrides=True)
             ),
-            "llamaindex": deepcopy(service.load_llamaindex(include_process_overrides=True)),
-            "graphrag": deepcopy(service.load_graphrag()),
-            "lightrag": deepcopy(service.load_lightrag()),
+            "llamaindex": _selected_fields(
+                service.load_llamaindex(include_process_overrides=True),
+                tuple(DEFAULT_LLAMAINDEX_SETTINGS),
+            ),
+            "graphrag": _selected_fields(service.load_graphrag(), tuple(DEFAULT_GRAPHRAG_SETTINGS)),
+            "lightrag": _selected_fields(service.load_lightrag(), tuple(DEFAULT_LIGHTRAG_SETTINGS)),
             "catalog": _catalog_profile_settings(catalog),
         }
     }

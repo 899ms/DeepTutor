@@ -125,7 +125,7 @@ def test_export_is_value_free_and_preserves_safe_configuration(tmp_path) -> None
     assert llm["id"] == "llm-profile"
     assert llm["binding"] == "openai"
     assert llm["api_key"] == {"present": True}
-    assert llm["extra_headers"] == {"Authorization": {"present": True}}
+    assert llm["extra_headers"] == {"present": True}
 
     for secret in (
         "secret-api-key",
@@ -271,3 +271,28 @@ async def test_profile_endpoints_are_admin_guarded_and_review_only(
     assert profile is exported
     assert diff["summary"]["changed"] == 0
     assert guarded == 2
+
+
+def test_catalog_export_never_copies_unknown_fields_or_proxy_credentials(tmp_path) -> None:
+    service = _configured_service(tmp_path)
+    catalog = _catalog()
+    profile = catalog["services"]["llm"]["profiles"][0]
+    profile["proxy"] = "http://proxy-user:proxy-secret@proxy.example.test"
+    profile["token"] = "hidden-provider-token"
+    profile["future_credential"] = "hidden-future-secret"
+    profile["models"][0]["future_credential"] = "hidden-model-secret"
+    exported = export_settings_profile(service=service, catalog=catalog)
+    rendered = json.dumps(exported)
+    for secret in (
+        "proxy-user",
+        "proxy-secret",
+        "hidden-provider-token",
+        "hidden-future-secret",
+        "hidden-model-secret",
+    ):
+        assert secret not in rendered
+    public = exported["profile"]["settings"]["catalog"]["services"]["llm"]["profiles"][0]
+    assert public["proxy"] == {"present": True}
+    assert public["token"] == {"present": True}
+    assert "future_credential" not in public
+    assert "future_credential" not in public["models"][0]
