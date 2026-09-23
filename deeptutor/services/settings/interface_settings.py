@@ -15,8 +15,8 @@ import tempfile
 import threading
 from typing import Any
 
+from deeptutor.response_languages import SUPPORTED_RESPONSE_LANGUAGES
 from deeptutor.services.path_service import get_path_service
-from deeptutor.services.prompt.language import SUPPORTED_RESPONSE_LANGUAGES
 from deeptutor.tools.builtin import USER_TOGGLEABLE_TOOL_NAMES
 
 DEFAULT_UI_SETTINGS: dict[str, Any] = {
@@ -111,12 +111,11 @@ def _normalize_response_language(language: Any, default: str = "en") -> str:
 
     code = language.strip().lower().replace("_", "-")
     code = _RESPONSE_LANGUAGE_ALIASES.get(code, code)
-    if code == "zh-cn":
-        code = "zh"
-    elif code.startswith("pt-"):
-        code = "pt"
     if code in SUPPORTED_RESPONSE_LANGUAGES:
         return code
+    base = code.split("-", 1)[0]
+    if base in SUPPORTED_RESPONSE_LANGUAGES:
+        return base
     return fallback
 
 
