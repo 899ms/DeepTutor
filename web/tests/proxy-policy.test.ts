@@ -13,12 +13,14 @@ import { config as proxyConfig } from "../proxy";
 import {
   CODEX_CALLBACK_API_PATH,
   CODEX_CALLBACK_PATH,
+  HANDOFF_PATH,
   classifyToken,
   isAuthExempt,
   isBackendPath,
   isCodexCallbackPath,
   isRetiredPagePath,
 } from "../lib/proxy-policy";
+import { prepareBackendForwardHeaders } from "../lib/backend-forward";
 
 function makeToken(payload: Record<string, unknown>): string {
   const encode = (value: unknown) =>
@@ -110,6 +112,51 @@ test("isAuthExempt allows auth pages and Next internals", () => {
   assert.equal(isAuthExempt("/register"), true);
   assert.equal(isAuthExempt("/_next/data/build/chat.json"), true);
   assert.equal(isAuthExempt("/favicon-32x32.png"), true);
+});
+
+test("public handoff page is exempt without exposing protected route prefixes", () => {
+  assert.equal(isAuthExempt(HANDOFF_PATH), true);
+  assert.equal(isAuthExempt("/handoff/extra"), false);
+  assert.equal(isAuthExempt("/handoff-lookalike"), false);
+});
+
+test("backend forwarding replaces client identity headers with frontend host", () => {
+  const headers = prepareBackendForwardHeaders(
+    new Headers({
+      connection: "keep-alive, x-remove-me",
+      cookie: "dt_token=session",
+      forwarded: "for=1.2.3.4;host=attacker.example",
+      host: "app.example",
+      "x-forwarded-for": "1.2.3.4",
+      "x-forwarded-host": "attacker.example",
+      "x-forwarded-proto": "https",
+      "x-real-ip": "1.2.3.4",
+      "x-deeptutor-frontend-host": "attacker.example",
+      "x-remove-me": "hop-by-hop",
+    }),
+  );
+
+  assert.equal(headers.get("x-deeptutor-frontend-host"), "app.example");
+  assert.equal(headers.get("cookie"), "dt_token=session");
+  for (const name of [
+    "connection",
+    "forwarded",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+    "x-remove-me",
+  ]) {
+    assert.equal(headers.has(name), false, name);
+  }
+});
+
+test("backend forwarding does not invent a frontend host from the Next URL", () => {
+  const headers = prepareBackendForwardHeaders(new Headers({
+    "x-forwarded-host": "app.example",
+    "x-deeptutor-frontend-host": "app.example",
+  }));
+  assert.equal(headers.has("x-deeptutor-frontend-host"), false);
 });
 
 test("isAuthExempt does NOT exempt protected app routes", () => {

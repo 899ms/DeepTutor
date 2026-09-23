@@ -102,7 +102,25 @@ def test_ui_settings_update_rejects_unsupported_language() -> None:
     with pytest.raises(ValidationError):
         settings_router.UISettingsUpdate(language="de")
     with pytest.raises(ValidationError):
-        settings_router.UISettingsUpdate(response_language="es")
+        settings_router.UISettingsUpdate(response_language="xx")
+
+
+@pytest.mark.asyncio
+async def test_ui_accepts_extended_response_languages(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
+    settings_file = tmp_path / "interface.json"
+    monkeypatch.setattr(settings_router, "_settings_file", lambda: settings_file)
+
+    response = await settings_router.update_ui_settings(
+        settings_router.UISettingsUpdate(language="en", response_language="ja")
+    )
+    assert response["response_language"] == "ja"
+
+    response = await settings_router.update_ui_settings(
+        settings_router.UISettingsUpdate(response_language="pt")
+    )
+    assert response["response_language"] == "pt"
 
 
 class _FakeEmbeddingAdapter:

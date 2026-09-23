@@ -60,6 +60,7 @@ export type PartnerGroupReferences = {
 }[];
 export type PersistUserMessage = boolean;
 export type Persona = string | null;
+export type PreserveSessionPreferences = boolean;
 export type ProtocolVersion = "2.0";
 export type QuestionNotebookReferences = number[];
 export type ReadingMaterialId = string | null;
@@ -72,7 +73,7 @@ export type Locator = number | null;
 export type Selection = string | null;
 export type ReadingWorkspaceId = string | null;
 export type Regenerate = boolean;
-export type RegeneratedFromMessageId = number | null;
+export type RegeneratedFromMessageId = number | string | null;
 export type SelectionTutorContext = {
   [k: string]: unknown;
 } | null;
@@ -297,6 +298,7 @@ export interface StartTurnCommand {
   partner_group_references?: PartnerGroupReferences;
   persist_user_message?: PersistUserMessage;
   persona?: Persona;
+  preserve_session_preferences?: PreserveSessionPreferences;
   protocol_version: ProtocolVersion;
   question_notebook_references?: QuestionNotebookReferences;
   reading_material_id?: ReadingMaterialId;

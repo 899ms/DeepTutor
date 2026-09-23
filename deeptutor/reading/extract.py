@@ -126,12 +126,14 @@ def _media_for_units(
     return tuple(items)
 
 
-def extract_material(path: str | Path) -> Extraction:
+def extract_material(path: str | Path, *, data: bytes | None = None) -> Extraction:
     """Cut *path* into units, dispatching on its extension.
 
     Raises :class:`ReadingError` when the file cannot be read at all, or when
     it yields no text — an image-only scan, for instance, which the reader
-    would otherwise present as an empty document with no explanation.
+    would otherwise present as an empty document with no explanation. For an
+    EPUB, ``data`` may contain already-normalized archive bytes so callers can
+    extract and store exactly what they read.
     """
     source = Path(path)
     if not source.is_file():
@@ -141,7 +143,12 @@ def extract_material(path: str | Path) -> Extraction:
     if suffix == ".pdf":
         extraction = _extract_pdf(source)
     elif suffix == ".epub":
-        extraction = _extract_epub(source)
+        if data is None:
+            try:
+                data = source.read_bytes()
+            except OSError as exc:
+                raise ReadingError(f"{source.name}: could not be read ({exc})") from exc
+        extraction = _extract_epub(data, source.name)
     elif suffix == ".pptx":
         extraction = _extract_slides(source)
     else:
@@ -232,14 +239,14 @@ def _pdf_pages_with_image_markers(
     return targeted, _media_for_units(targeted, pdf_images.collection.images)
 
 
-def _extract_epub(source: Path) -> Extraction:
+def _extract_epub(data: bytes, filename: str) -> Extraction:
     """Preserve EPUB spine order so browser and assistant locators agree."""
     from deeptutor.utils.document_extractor import DocumentExtractionError, extract_epub_spine
 
     try:
-        units, navigation = extract_epub_spine(source.read_bytes(), source.name)
+        units, navigation = extract_epub_spine(data, filename)
     except (OSError, DocumentExtractionError) as exc:
-        raise ReadingError(f"{source.name}: failed to read EPUB ({exc})") from exc
+        raise ReadingError(f"{filename}: failed to read EPUB ({exc})") from exc
 
     refs = tuple(
         UnitReference(locator=index, source_href=unit.href, title=unit.title)

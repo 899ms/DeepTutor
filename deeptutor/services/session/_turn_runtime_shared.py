@@ -883,7 +883,29 @@ def _request_snapshot_metadata(
         "enabledTools": _string_list(payload.get("tools")),
         "knowledgeBases": _string_list(payload.get("knowledge_bases")),
         "language": str(payload.get("language", "en") or "en"),
+        # Keep empty values too. A failed turn can be resent after the
+        # conversation preferences have changed; absence would otherwise
+        # cause the retry to pick up the newer tools, sources, or persona.
+        "config": dict(config),
+        "notebookReferences": list(notebook_references),
+        "historyReferences": list(history_references),
+        "partnerGroupReferences": list(partner_group_references),
+        "questionNotebookReferences": list(question_notebook_references),
+        "bookReferences": list(book_references),
+        "readingReferences": list(reading_references),
+        "memoryReferences": list(memory_references),
+        "skills": _string_list(payload.get("skills")),
+        "mcp": _string_list(payload.get("mcp")),
+        "persona": persona,
     }
+    for payload_key, snapshot_key in (
+        ("workspace_id", "workspaceId"),
+        ("course_id", "courseId"),
+        ("mastery_session_mode", "masterySessionMode"),
+        ("auto_route", "autoRoute"),
+    ):
+        if payload_key in payload:
+            snapshot[snapshot_key] = payload[payload_key]
     for payload_key, snapshot_key in (
         ("consult_partner_id", "consultPartnerId"),
         ("partner_discussion_group_id", "partnerDiscussionGroupId"),
@@ -891,30 +913,14 @@ def _request_snapshot_metadata(
         if payload_key in payload:
             snapshot[snapshot_key] = payload[payload_key]
     workspace_mode = _workspace_mode(payload.get("workspace_mode"), capability=capability)
-    if workspace_mode:
-        snapshot["workspaceMode"] = workspace_mode
+    snapshot["workspaceMode"] = workspace_mode
     if attachments:
         snapshot["attachments"] = attachments
-    if config:
-        snapshot["config"] = dict(config)
     capability_route = payload.get("capability_route")
     if isinstance(capability_route, dict):
         snapshot["capabilityRoute"] = dict(capability_route)
-    if notebook_references:
-        snapshot["notebookReferences"] = notebook_references
-    if history_references:
-        snapshot["historyReferences"] = history_references
-    if partner_group_references:
-        snapshot["partnerGroupReferences"] = partner_group_references
-    if question_notebook_references:
-        snapshot["questionNotebookReferences"] = question_notebook_references
-    if book_references:
-        snapshot["bookReferences"] = book_references
-    if reading_references:
-        snapshot["readingReferences"] = list(reading_references)
     mastery_path_id = _mastery_path_id(payload.get("mastery_path_id"))
-    if mastery_path_id:
-        snapshot["masteryPathId"] = mastery_path_id
+    snapshot["masteryPathId"] = mastery_path_id
     # Persisted so a regenerate re-runs with the same document open. Without it
     # the reading capability would be inactive on the retry and the answer would
     # silently lose its grounding.
@@ -927,15 +933,10 @@ def _request_snapshot_metadata(
         if reading_material_revision is not None:
             snapshot["readingMaterialRevision"] = reading_material_revision
     reading_workspace_id = _reading_workspace_id(payload.get("reading_workspace_id"))
-    if reading_workspace_id:
-        snapshot["readingWorkspaceId"] = reading_workspace_id
+    snapshot["readingWorkspaceId"] = reading_workspace_id
     timed_media_id = _timed_media_id(payload.get("timed_media_id"))
     if timed_media_id:
         snapshot["timedMediaId"] = timed_media_id
-    if persona:
-        snapshot["persona"] = persona
-    if memory_references:
-        snapshot["memoryReferences"] = memory_references
     if llm_selection:
         snapshot["llmSelection"] = llm_selection
     return {"request_snapshot": snapshot}

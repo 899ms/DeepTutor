@@ -27,8 +27,8 @@ import { useTranslation } from "react-i18next";
 
 import ChatComposer from "@/components/chat/home/ChatComposer";
 import type { ContextBudget } from "@/components/chat/home/ContextBudgetChip";
-import type { CapabilityDef } from "@/features/capabilities/presentation";
 import type { ResourceSelection } from "@/features/chat/ChatStateAdapter";
+import type { CapabilityDef } from "@/features/capabilities/presentation";
 import type { ComposerResourceCatalog } from "@/hooks/useComposerResources";
 import type { SelectedHistorySession } from "@/components/chat/HistorySessionPicker";
 import type { SelectedQuestionEntry } from "@/components/chat/QuestionBankPicker";
@@ -777,9 +777,16 @@ function StandaloneComposerImpl({
       if (!resourceReuse.policy.persona) setSelectedPersona(null);
       applyKnowledgeBases(retainedKnowledgeBases(selectedKnowledgeBases, agentNameSet, resourceReuse.policy));
       if (!resourceReuse.policy.memory) setSelectedMemoryFiles([]);
+      if (onResourceSelectionChange) {
+        const current = resourceSelection ?? { skills: [], mcp: [] };
+        onResourceSelectionChange({
+          skills: resourceReuse.policy.skills ? current.skills : [],
+          mcp: resourceReuse.policy.mcp ? current.mcp : [],
+        });
+      }
     },
     [
-      resourceReuse, applyKnowledgeBases, agentNameSet,
+      resourceReuse, applyKnowledgeBases, agentNameSet, onResourceSelectionChange, resourceSelection,
       attachments,
       awaitingUserReply,
       isStreaming,

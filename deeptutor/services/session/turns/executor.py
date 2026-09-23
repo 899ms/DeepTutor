@@ -230,6 +230,13 @@ class TurnExecutor:
             )
         )
         try:
+            # A queued turn may start after a learner's material grant changes.
+            # Recheck before prompt construction and reading-tool execution.
+            material_id = _reading_material_id(payload.get("reading_material_id"))
+            if material_id:
+                from deeptutor.multi_user.learning_access import assert_learning_material
+
+                assert_learning_material(material_id)
             from deeptutor.agents.notebook import NotebookAnalysisAgent
             from deeptutor.book.context import build_book_context
             from deeptutor.core.context import Attachment, TurnRuntimeContext, UnifiedContext
@@ -551,12 +558,14 @@ class TurnExecutor:
 
             # Persona: at most one behaviour preset per turn, eagerly
             # injected (a persona must shape the voice from the first
-            # token). Resolution: the user's own workspace first; non-admin
-            # users fall back to admin-authored presets (personas carry no
+            # token). Resolution: the user's own workspace first, then
+            # admin-authored presets for every role (personas carry no
             # privileged workflow, so no grant gate applies).
             from deeptutor.multi_user.context import get_current_user
-            from deeptutor.multi_user.paths import get_admin_path_service
-            from deeptutor.services.persona import PersonaService, get_persona_service
+            from deeptutor.services.persona import (
+                get_persona_service,
+                load_visible_for_context,
+            )
 
             current_user = get_current_user()
             learner_profile_prompt = ""
@@ -568,13 +577,14 @@ class TurnExecutor:
                 if account and str(account[1].get("preset") or "standard") == "learner":
                     learner_profile_prompt = prompt_block(account[1].get("learner_profile"))
             requested_persona = str(payload.get("persona") or "").strip()
-            persona_context = ""
-            if requested_persona:
-                persona_context = get_persona_service().load_for_context(requested_persona)
-                if not persona_context and not current_user.is_admin:
-                    persona_context = PersonaService(
-                        root=get_admin_path_service().get_workspace_dir() / "personas"
-                    ).load_for_context(requested_persona)
+            persona_context = (
+                load_visible_for_context(
+                    requested_persona,
+                    workspace=get_persona_service(),
+                )
+                if requested_persona
+                else ""
+            )
             active_persona = requested_persona if persona_context else ""
 
             from deeptutor.services.skill.runtime import skill_manifest

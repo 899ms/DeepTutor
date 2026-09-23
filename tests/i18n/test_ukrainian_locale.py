@@ -68,6 +68,14 @@ def test_web_locale_has_core_copy_and_english_fallback() -> None:
     assert 'fallbackLng: "en"' in init
 
 
+def test_web_locale_covers_every_english_key() -> None:
+    """Cover English keys plus Ukrainian's extra few/many plural forms."""
+    en = json.loads((WEB / "locales/en/app.json").read_text(encoding="utf-8"))
+    uk = json.loads((WEB / "locales/uk/app.json").read_text(encoding="utf-8"))
+    assert set(en) <= set(uk)
+    assert all(key.endswith(("_few", "_many")) for key in set(uk) - set(en))
+
+
 def test_web_locale_keeps_interpolation_placeholders() -> None:
     import re
 
