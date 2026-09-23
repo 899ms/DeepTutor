@@ -169,6 +169,19 @@ def canonical_provider_name(name: str | None) -> str | None:
     return PROVIDER_ALIASES.get(key, key)
 
 
+# These Claude families reject explicit temperature and use adaptive thinking.
+# Keep one family list for direct Anthropic calls and OpenAI-compatible gateways.
+# Older Opus/Sonnet families still accept temperature and budget-token thinking.
+ANTHROPIC_EFFORT_BASED_FAMILIES: tuple[str, ...] = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-opus-5",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
+
+
 # ---------------------------------------------------------------------------
 # PROVIDERS — the registry.  Order = priority.
 # ---------------------------------------------------------------------------
@@ -339,15 +352,10 @@ PROVIDERS: tuple[ProviderSpec, ...] = (
         backend="anthropic",
         default_api_base="https://api.anthropic.com/v1",
         supports_prompt_caching=True,
-        # Claude Sonnet 5 and Opus 4.8 reject an explicit `temperature`
-        # outright ("`temperature` is deprecated for this model."), where
-        # earlier Claude models still accept it. Dropping the parameter
-        # (value None) lets the API apply its own default. Like the Kimi
-        # case below, the limit is the vendor API's, not the route's, so it
-        # must live here to survive binding="openai" through a gateway.
-        model_overrides=(
-            ("claude-sonnet-5", {"temperature": None}),
-            ("claude-opus-4-8", {"temperature": None}),
+        # This model rule also applies when Claude is reached through a
+        # generic OpenAI-compatible binding or gateway.
+        model_overrides=tuple(
+            (family, {"temperature": None}) for family in ANTHROPIC_EFFORT_BASED_FAMILIES
         ),
     ),
     ProviderSpec(

@@ -26,6 +26,7 @@ from deeptutor.multi_user.device_credentials import revoke_device_credentials_fo
 from deeptutor.multi_user.grants import (
     LEARNING_AGE_BANDS,
     LEARNING_SURFACES,
+    grant_path,
     learner_grant,
     load_grant,
     normalize_grant,
@@ -58,6 +59,7 @@ from deeptutor.reading import ReadingStore
 from deeptutor.reading.extensions import get_reading_extension_registry
 from deeptutor.services.auth import POCKETBASE_ENABLED, hash_password
 from deeptutor.services.config.model_catalog import ModelCatalogService
+from deeptutor.services.file_io import atomic_write_text
 
 router = APIRouter()
 
@@ -657,7 +659,7 @@ async def put_guardian_restrictions(
     payload: GuardianRestrictionsPayload,
     current: object = Depends(require_auth),
 ) -> dict[str, Any]:
-    _learner_username, learner_record, actor_user_id, is_admin = _require_guardian_access(
+    learner_username, learner_record, actor_user_id, is_admin = _require_guardian_access(
         current, learner_user_id, "manage_restrictions"
     )
     available_extensions = {
@@ -673,14 +675,10 @@ async def put_guardian_restrictions(
     policy = grant.get("learning_policy")
     if not isinstance(policy, dict):
         # Assigning guardian restrictions is what makes an account a learning
-        # account. Seed the default learning policy and flip the preset to
-        # "learner" so the frontend renders the scoped learner shell instead
-        # of the full app (a `standard` preset + `learning_policy` mix makes
-        # the client load admin surfaces that all default-deny to 403, #1222).
+        # account. Seed the default learning policy; the preset is switched
+        # only after the updated grant has passed validation and been saved.
         grant = deepcopy(learner_grant(learner_user_id))
         policy = grant.get("learning_policy")
-        if isinstance(policy, dict) and _learner_username:
-            set_preset(_learner_username, "learner")
     if not isinstance(policy, dict):
         raise HTTPException(status_code=409, detail="Learner account has no learning policy")
     reading = policy.get("reading")
@@ -691,6 +689,13 @@ async def put_guardian_restrictions(
     policy["allowed_surfaces"] = payload.allowed_surfaces
     reading["allow_upload"] = payload.allow_upload
     reading["extensions"] = payload.extensions
+    needs_preset_update = learner_record.get("preset") != "learner"
+    previous_grant_path = grant_path(learner_user_id) if needs_preset_update else None
+    previous_grant_text = (
+        previous_grant_path.read_text(encoding="utf-8")
+        if previous_grant_path is not None and previous_grant_path.exists()
+        else None
+    )
     try:
         grant = normalize_grant(learner_user_id, grant)
         validate_grant(grant)
@@ -698,6 +703,31 @@ async def put_guardian_restrictions(
         grant = save_grant(learner_user_id, grant)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if needs_preset_update:
+        preset_error: Exception | None = None
+        try:
+            preset_saved = set_preset(learner_username, "learner")
+        except Exception as exc:
+            preset_saved = False
+            preset_error = exc
+        if not preset_saved:
+            # The grant and account preset live in separate files. Restore the
+            # exact prior grant if the second write fails, including absence.
+            assert previous_grant_path is not None
+            try:
+                if previous_grant_text is None:
+                    previous_grant_path.unlink(missing_ok=True)
+                else:
+                    atomic_write_text(previous_grant_path, previous_grant_text)
+            except OSError as exc:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Learner preset update failed and the prior grant could not be restored",
+                ) from exc
+            raise HTTPException(
+                status_code=500 if preset_error is not None else 409,
+                detail="Learner preset update failed; the prior grant was restored",
+            ) from preset_error
     restrictions = _guardian_restrictions(grant)
     _log_supervisor_action(
         "guardian_restrictions_set",
