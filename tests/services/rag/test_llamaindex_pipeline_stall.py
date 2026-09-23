@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 from contextvars import ContextVar
+import threading
 import time
 from types import SimpleNamespace
 from typing import Any
@@ -101,29 +102,22 @@ async def test_stall_guard_returns_when_progress_keeps_flowing(
 
 
 @pytest.mark.asyncio
-async def test_stall_guard_survives_a_concurrent_job_taking_the_callback_slot(
+async def test_stall_guard_keeps_its_worker_callback_when_another_job_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A second indexing job must not make this one look stalled.
-
-    ``set_progress_callback`` writes to the process-global LlamaIndex
-    ``Settings`` embed model, which holds exactly one callback. A concurrent
-    job overwrites ours, so without re-arming on each poll tick we would stop
-    observing progress we are still making and kill a perfectly healthy job
-    with a false ``IndexingStallError``.
-    """
+    """Each executor's context keeps the callback captured at job start."""
     pipeline_module, _, _ = _llamaindex_modules()
     monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.05)
     slot: dict = {}
     monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda cb: slot.update(cb=cb))
 
     def displaced_then_moving():
-        # A concurrent indexing job claims the single shared slot.
+        worker_callback = slot["cb"]
+        # A concurrent job may start, but this worker retains its own callback.
         slot["cb"] = lambda *args, **kwargs: None
         end = time.monotonic() + 0.6
         while time.monotonic() < end:
-            # Batches notify whoever currently owns the slot.
-            slot["cb"](1, 1)
+            worker_callback(1, 1)
             time.sleep(0.05)
         return "done"
 
@@ -133,6 +127,108 @@ async def test_stall_guard_survives_a_concurrent_job_taking_the_callback_slot(
         )
         == "done"
     )
+
+
+@pytest.mark.asyncio
+async def test_timed_out_worker_blocks_same_kb_retry_and_late_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A timeout is terminal for progress, but its sync thread still owns the KB."""
+    pipeline_module, _, _ = _llamaindex_modules()
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.01)
+    callback: dict = {}
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", lambda cb: callback.update(cb=cb))
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    events: list[tuple[int, int]] = []
+
+    def delayed_worker():
+        started.set()
+        release.wait(timeout=3)
+        callback["cb"](1, 1)
+        finished.set()
+
+    try:
+        with pytest.raises(pipeline_module.IndexingStallError, match="no progress"):
+            await pipeline_module._run_with_stall_guard(
+                delayed_worker,
+                progress_callback=lambda n, total: events.append((n, total)),
+                stall_timeout=0.05,
+                worker_key="kb-1478",
+            )
+        assert started.is_set()
+        with pytest.raises(pipeline_module.IndexingStallError, match="still running"):
+            await pipeline_module._run_with_stall_guard(lambda: "retry", worker_key="kb-1478")
+    finally:
+        release.set()
+
+    assert await asyncio.to_thread(finished.wait, 2)
+    for _ in range(100):
+        if "kb-1478" not in pipeline_module._INDEX_WORKERS:
+            break
+        await asyncio.sleep(0.01)
+    assert "kb-1478" not in pipeline_module._INDEX_WORKERS
+    assert events == []
+    assert (
+        await pipeline_module._run_with_stall_guard(lambda: "retry", worker_key="kb-1478")
+        == "retry"
+    )
+
+
+@pytest.mark.asyncio
+async def test_different_kb_workers_keep_independent_progress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second KB must not displace the first one's heartbeat (#1478)."""
+    pipeline_module, _, _ = _llamaindex_modules()
+    from deeptutor.services.rag.pipelines.llamaindex.embedding_adapter import (
+        _task_progress_callback,
+        set_progress_callback,
+    )
+
+    monkeypatch.setattr(pipeline_module, "_INDEX_STALL_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(pipeline_module, "set_progress_callback", set_progress_callback)
+    barrier = threading.Barrier(2)
+    events: dict[str, list[tuple[int, int]]] = {"a": [], "b": []}
+
+    def worker(name: str) -> str:
+        callback = _task_progress_callback.get()
+        assert callback is not None
+        barrier.wait(timeout=2)
+        end = time.monotonic() + 0.2
+        while time.monotonic() < end:
+            callback(1, 1)
+            time.sleep(0.01)
+        return name
+
+    async def index(name: str) -> str:
+        return await pipeline_module._run_with_stall_guard(
+            lambda: worker(name),
+            progress_callback=lambda n, total: events[name].append((n, total)),
+            stall_timeout=0.08,
+            worker_key=f"kb-{name}",
+        )
+
+    assert await asyncio.gather(index("a"), index("b")) == ["a", "b"]
+    assert events["a"] and events["b"]
+
+
+@pytest.mark.asyncio
+async def test_busy_reindex_rejects_before_creating_an_empty_version(tmp_path, monkeypatch) -> None:
+    pipeline_module, _, _ = _llamaindex_modules()
+    pipeline = _make_pipeline(tmp_path, monkeypatch)
+    key = str((tmp_path / "kb").resolve())
+    marker = threading.Event()
+    pipeline_module._INDEX_WORKERS[key] = marker
+    try:
+        with pytest.raises(pipeline_module.IndexingStallError, match="still running"):
+            await pipeline.initialize("kb", ["doc.pdf"])
+    finally:
+        marker.set()
+        pipeline_module._INDEX_WORKERS.pop(key, None)
+
+    assert not (tmp_path / "kb" / "version-1").exists()
 
 
 @pytest.mark.asyncio

@@ -313,11 +313,13 @@ export function useKnowledgeProgress(options?: UseKnowledgeProgressOptions) {
           setTasksByKb((prev) => {
             const current = prev[kbName];
             if (!current || current.taskId !== taskId) return prev;
+            const logs = appendTaskLog(current.logs, payload.message);
+            if (logs === current.logs) return prev;
             return {
               ...prev,
               [kbName]: {
                 ...current,
-                logs: [...current.logs, payload.message!],
+                logs,
               },
             };
           });
