@@ -3285,6 +3285,26 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/mastery-paths/reading/records": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * List Reading Learning Records
+     * @description Reading progress and extension activity for the current account.
+     */
+    readonly get: operations["list_reading_learning_records_api_mastery_paths_reading_records_get"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/mastery-paths/topics": {
     readonly parameters: {
       readonly query?: never;
@@ -6194,6 +6214,26 @@ export interface paths {
      * @description The original bytes, for the faithful viewer. Serves Range requests.
      */
     readonly get: operations["get_raw_api_reading_materials__material_id__raw_get"];
+    readonly put?: never;
+    readonly post?: never;
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/reading/materials/{material_id}/render": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    /**
+     * Get Render
+     * @description Serve a browser-ready EPUB archive, or the original for other formats.
+     */
+    readonly get: operations["get_render_api_reading_materials__material_id__render_get"];
     readonly put?: never;
     readonly post?: never;
     readonly delete?: never;
@@ -10722,9 +10762,7 @@ export interface components {
       /** Goal */
       readonly goal: string;
       /** Modules */
-      readonly modules?: readonly {
-        readonly [key: string]: unknown;
-      }[];
+      readonly modules?: readonly components["schemas"]["ModuleInput"][];
       /** Must Cover */
       readonly must_cover?: readonly string[];
       /**
@@ -11375,9 +11413,7 @@ export interface components {
     /** EditTopicMapRequest */
     readonly EditTopicMapRequest: {
       /** Modules */
-      readonly modules: readonly {
-        readonly [key: string]: unknown;
-      }[];
+      readonly modules: readonly components["schemas"]["ModuleInput"][];
     };
     /** EnabledPayload */
     readonly EnabledPayload: {
@@ -11669,9 +11705,7 @@ export interface components {
     /** InitModulesRequest */
     readonly InitModulesRequest: {
       /** Modules */
-      readonly modules: readonly {
-        readonly [key: string]: unknown;
-      }[];
+      readonly modules: readonly components["schemas"]["ModuleInput"][];
     };
     /** InsertBlockRequest */
     readonly InsertBlockRequest: {
@@ -11792,6 +11826,38 @@ export interface components {
       /** Status */
       readonly status?: string | null;
     };
+    /** KnowledgePointInput */
+    readonly KnowledgePointInput: {
+      /**
+       * Client Ref
+       * @default
+       */
+      readonly client_ref: string;
+      /** Id */
+      readonly id?: string | null;
+      /**
+       * Module Id
+       * @default
+       */
+      readonly module_id: string;
+      /** Name */
+      readonly name: string;
+      /** Prerequisite Ids */
+      readonly prerequisite_ids?: readonly string[];
+      /** Prerequisite Refs */
+      readonly prerequisite_refs?: readonly string[];
+      /** Topic Source Ids */
+      readonly topic_source_ids?: readonly string[];
+      /** Topic Source Refs */
+      readonly topic_source_refs?: readonly string[];
+      /** @default concept */
+      readonly type: components["schemas"]["KnowledgeType"];
+    };
+    /**
+     * KnowledgeType
+     * @enum {string}
+     */
+    readonly KnowledgeType: "memory" | "concept" | "procedure" | "design";
     /** LanguageUpdate */
     readonly LanguageUpdate: {
       /**
@@ -12606,6 +12672,27 @@ export interface components {
       /** Ttft Seconds */
       readonly ttft_seconds?: number | null;
     };
+    /** ModuleInput */
+    readonly ModuleInput: {
+      /** Id */
+      readonly id?: string | null;
+      /** Knowledge Points */
+      readonly knowledge_points?: readonly components["schemas"]["KnowledgePointInput"][];
+      /** Name */
+      readonly name: string;
+      /**
+       * Objective
+       * @default
+       */
+      readonly objective: string;
+      /** Order */
+      readonly order?: number | null;
+      /**
+       * Pass Threshold
+       * @default 0.7
+       */
+      readonly pass_threshold: number;
+    };
     /** MoveBlockRequest */
     readonly MoveBlockRequest: {
       /** Block Id */
@@ -12756,6 +12843,18 @@ export interface components {
       readonly options: {
         readonly [key: string]: string;
       };
+      /**
+       * Origin Ref
+       * @default
+       */
+      readonly origin_ref: string;
+      /**
+       * Origin Type
+       * @default conversation
+       * @enum {string}
+       */
+      readonly origin_type:
+        "conversation" | "external_import" | "document_analysis";
       /** Practice */
       readonly practice?: {
         readonly [key: string]: unknown;
@@ -12803,7 +12902,10 @@ export interface components {
        * @default
        */
       readonly section_title: string;
-      /** Session Id */
+      /**
+       * Session Id
+       * @default
+       */
       readonly session_id: string;
       /**
        * Session Title
@@ -13421,6 +13523,57 @@ export interface components {
        * @default []
        */
       readonly tools_used: readonly string[];
+    };
+    /**
+     * ReadingActivityRecord
+     * @description One successful Reading-extension action, without source content.
+     */
+    readonly ReadingActivityRecord: {
+      /** Action */
+      readonly action: string;
+      /** Activity Id */
+      readonly activity_id: string;
+      /** Created At */
+      readonly created_at?: number;
+      /** Extension Id */
+      readonly extension_id: string;
+      /** Locator */
+      readonly locator: number;
+      /** Material Id */
+      readonly material_id: string;
+      /**
+       * Result Type
+       * @enum {string}
+       */
+      readonly result_type: "card" | "quiz" | "feedback" | "browser_speech";
+    };
+    /**
+     * ReadingLearningRecords
+     * @description Account-scoped Reading summary for reporting surfaces.
+     */
+    readonly ReadingLearningRecords: {
+      /** Activities */
+      readonly activities?: readonly components["schemas"]["ReadingActivityRecord"][];
+      /** Progress */
+      readonly progress?: readonly components["schemas"]["ReadingProgressRecord"][];
+    };
+    /**
+     * ReadingProgressRecord
+     * @description One material's Reading progress in an account's learning records.
+     */
+    readonly ReadingProgressRecord: {
+      /** Furthest Locator */
+      readonly furthest_locator: number;
+      /** Furthest Percentage */
+      readonly furthest_percentage: number;
+      /** Latest Locator */
+      readonly latest_locator: number;
+      /** Latest Percentage */
+      readonly latest_percentage: number;
+      /** Material Id */
+      readonly material_id: string;
+      /** Updated At */
+      readonly updated_at?: number;
     };
     /** ReadingReference */
     readonly ReadingReference: {
@@ -14226,6 +14379,11 @@ export interface components {
        */
       readonly available: boolean;
       /**
+       * Client Ref
+       * @default
+       */
+      readonly client_ref: string;
+      /**
        * Excerpt
        * @default
        */
@@ -14835,6 +14993,18 @@ export interface components {
       readonly options?: {
         readonly [key: string]: string;
       } | null;
+      /**
+       * Origin Ref
+       * @default
+       */
+      readonly origin_ref: string;
+      /**
+       * Origin Type
+       * @default conversation
+       * @enum {string}
+       */
+      readonly origin_type:
+        "conversation" | "external_import" | "document_analysis";
       /** Quality */
       readonly quality?: number | null;
       /** Question */
@@ -14863,7 +15033,10 @@ export interface components {
        * @default
        */
       readonly section_title: string;
-      /** Session Id */
+      /**
+       * Session Id
+       * @default
+       */
       readonly session_id: string;
       /**
        * Source
@@ -15421,6 +15594,9 @@ export type SchemaInvidiousSettings =
   components["schemas"]["InvidiousSettings"];
 export type SchemaKnowledgeBaseInfo =
   components["schemas"]["KnowledgeBaseInfo"];
+export type SchemaKnowledgePointInput =
+  components["schemas"]["KnowledgePointInput"];
+export type SchemaKnowledgeType = components["schemas"]["KnowledgeType"];
 export type SchemaLanguageUpdate = components["schemas"]["LanguageUpdate"];
 export type SchemaLearnerOverrideRequest =
   components["schemas"]["LearnerOverrideRequest"];
@@ -15474,6 +15650,7 @@ export type SchemaMinerUSettingsUpdate =
 export type SchemaModelCapabilitiesQuery =
   components["schemas"]["ModelCapabilitiesQuery"];
 export type SchemaModelUsage = components["schemas"]["ModelUsage"];
+export type SchemaModuleInput = components["schemas"]["ModuleInput"];
 export type SchemaMoveBlockRequest = components["schemas"]["MoveBlockRequest"];
 export type SchemaMoveFilePayload = components["schemas"]["MoveFilePayload"];
 export type SchemaMoveRecordRequest =
@@ -15546,6 +15723,12 @@ export type SchemaQuizResultsRequest =
 export type SchemaReactEditRequest = components["schemas"]["ReactEditRequest"];
 export type SchemaReactEditResponse =
   components["schemas"]["ReactEditResponse"];
+export type SchemaReadingActivityRecord =
+  components["schemas"]["ReadingActivityRecord"];
+export type SchemaReadingLearningRecords =
+  components["schemas"]["ReadingLearningRecords"];
+export type SchemaReadingProgressRecord =
+  components["schemas"]["ReadingProgressRecord"];
 export type SchemaReadingReference = components["schemas"]["ReadingReference"];
 export type SchemaReadingSessionCreateRequest =
   components["schemas"]["ReadingSessionCreateRequest"];
@@ -22516,6 +22699,39 @@ export interface operations {
       };
     };
   };
+  readonly list_reading_learning_records_api_mastery_paths_reading_records_get: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path?: never;
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["ReadingLearningRecords"];
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
   readonly list_topics_api_mastery_paths_topics_get: {
     readonly parameters: {
       readonly query?: never;
@@ -28135,8 +28351,11 @@ export interface operations {
       readonly query: {
         /** @description Return 204 No Content instead of 404 when the entry is absent — used by the quiz viewer to probe not-yet-saved questions without logging noisy 404s. */
         readonly missing_ok?: boolean;
+        readonly origin_ref?: string;
+        readonly origin_type?:
+          "conversation" | "external_import" | "document_analysis";
         readonly question_id: string;
-        readonly session_id: string;
+        readonly session_id?: string;
         readonly turn_id?: string | null;
       };
       readonly header?: {
@@ -29512,6 +29731,41 @@ export interface operations {
     };
   };
   readonly get_raw_api_reading_materials__material_id__raw_get: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path: {
+        readonly material_id: string;
+      };
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody?: never;
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": unknown;
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly get_render_api_reading_materials__material_id__render_get: {
     readonly parameters: {
       readonly query?: never;
       readonly header?: {
