@@ -52,15 +52,27 @@ class TestTextArity:
     def test_uppercase_point_arguments_are_not_combined(self):
         command = 'T1=Text["label",P,Q]'
         result = validate_command(command)
-        assert not result.is_valid
+        # Q could be a named Boolean. Static validation cannot infer its type.
+        assert result.is_valid
         assert result.fixed == command
-        assert any("Invalid 3-argument Text[] signature" in error for error in result.errors)
 
-    def test_text_with_more_than_four_arguments_is_rejected(self):
+    def test_text_with_five_arguments_is_rejected(self):
         command = 'T1=Text["$a^2$",(1,2),true,true,5]'
         result = validate_command(command)
         assert not result.is_valid
-        assert any("at most four arguments" in error for error in result.errors)
+        assert any("one to four arguments, or six" in error for error in result.errors)
+
+    def test_text_with_six_alignment_arguments_passes(self):
+        command = 'T1=Text["$a^2$",(1,2),true,true,-1,0]'
+        result = validate_command(command)
+        assert result.is_valid
+        assert result.errors == []
+
+    def test_named_boolean_third_argument_is_preserved(self):
+        command = 'T1=Text["label",P,showVariables]'
+        result = validate_command(command)
+        assert result.is_valid
+        assert result.fixed == command
 
 
 class TestLaTeXBalance:
@@ -132,7 +144,7 @@ class TestScriptLevel:
             [
                 "a=Slider(1,5,0.1)",
                 "b=Slider(1,5,0.1)",
-                'T9=Text["$(a+b)^2$",P,Q]',
+                'T9=Text["$(a+b)^2$",(1,2),3]',
             ]
         )
         _, _, errors = validate_ggbscript(script)

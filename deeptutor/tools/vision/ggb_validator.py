@@ -229,12 +229,17 @@ def _is_scalar_argument(arg: str) -> bool:
     return True
 
 
+def _is_explicit_scalar_expression(arg: str) -> bool:
+    """Only repair coordinates when the third argument cannot be a Boolean name."""
+    stripped = arg.strip()
+    return _is_scalar_argument(stripped) and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", stripped)
+
+
 def validate_text_command(command: str) -> tuple[str, list[str], list[str]]:
     """Validate a ``Text`` command for arity and LaTeX balance.
 
-    GeoGebra accepts ``Text[<object>, <point>]`` (2 args),
-    ``Text[<object>, <point>, <bool>]`` (3 args), or
-    ``Text[<object>, <point>, <bool>, <bool>]`` (4 args). The common invented
+    GeoGebra also accepts a one-argument form, a two-argument substitution
+    Boolean, and a six-argument form with horizontal/vertical alignment. The common invented
     form ``Text[<string>, <x>, <y>]`` is repaired into a two-argument point
     when both trailing values are scalar expressions.
 
@@ -263,21 +268,21 @@ def validate_text_command(command: str) -> tuple[str, list[str], list[str]]:
 
     if len(args) == 3 and not errors:
         second, third = args[1], args[2]
-        if _is_scalar_argument(second) and _is_scalar_argument(third):
+        if _is_scalar_argument(second) and _is_explicit_scalar_expression(third):
             args[1] = f"({second},{third})"
             del args[2]
             fixed = command[: match.start(1)] + ",".join(args) + command[match.end(1) :]
             warnings.append("Combined scalar x and y arguments into a Text[] point argument")
-        elif not _is_boolean_argument(third):
+        elif _is_point_argument(second) and _is_explicit_scalar_expression(third):
             errors.append(
                 "Invalid 3-argument Text[] signature. Use "
                 "Text[<object>, <point>, <bool>] with a boolean third argument, "
                 "or combine scalar coordinates into Text[<object>, (<x>, <y>)]."
             )
 
-    if len(args) > 4:
+    if len(args) == 5 or len(args) > 6:
         errors.append(
-            "Text[] supports at most four arguments. Use Text[<object>, <point>, <bool>, <bool>]."
+            "Text[] supports one to four arguments, or six with horizontal and vertical alignment."
         )
 
     return fixed, warnings, errors
