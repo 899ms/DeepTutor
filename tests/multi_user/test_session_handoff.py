@@ -25,7 +25,8 @@ def test_public_origin_is_https_and_host_bound() -> None:
             session_handoff.public_origin(raw)
 
 
-def test_handoff_code_and_ticket_are_single_use(tmp_path) -> None:
+def test_handoff_code_and_ticket_are_single_use(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(session_handoff, "load_or_create_auth_secret", lambda: "test-secret")
     store = session_handoff.SessionHandoffStore(tmp_path / "handoff.sqlite3")
     ticket = session_handoff.encrypt_ticket_payload(
         {"mode": "builtin", "host": "app.example", "exp": 220},
@@ -40,15 +41,17 @@ def test_handoff_code_and_ticket_are_single_use(tmp_path) -> None:
 
     with pytest.raises(session_handoff.HandoffRejected):
         store.exchange(code=record.code, public_host="other.example", now=101)
-    assert store.exchange(code=record.code, public_host="app.example", now=102) == ticket
+    exchanged = store.exchange(code=record.code, public_host="app.example", now=102)
+    assert exchanged != ticket
+    assert session_handoff.decrypt_ticket_payload(exchanged)["exp"] == 222
     with pytest.raises(session_handoff.HandoffRejected):
         store.exchange(code=record.code, public_host="app.example", now=103)
 
     with pytest.raises(session_handoff.HandoffRejected):
-        store.consume_ticket(ticket=ticket, public_host="other.example", now=104)
-    assert store.consume_ticket(ticket=ticket, public_host="app.example", now=105) == ticket
+        store.consume_ticket(ticket=exchanged, public_host="other.example", now=104)
+    assert store.consume_ticket(ticket=exchanged, public_host="app.example", now=105) == exchanged
     with pytest.raises(session_handoff.HandoffRejected):
-        store.consume_ticket(ticket=ticket, public_host="app.example", now=106)
+        store.consume_ticket(ticket=exchanged, public_host="app.example", now=106)
 
 
 def test_expired_code_is_rejected_and_rate_limited(tmp_path, monkeypatch) -> None:
@@ -109,3 +112,8 @@ def test_database_never_stores_plaintext_code_ticket_or_bearer(tmp_path) -> None
 
     assert record.code not in persisted
     assert bearer not in persisted
+
+
+def test_invalid_encrypted_ticket_is_a_controlled_rejection() -> None:
+    with pytest.raises(session_handoff.HandoffRejected):
+        session_handoff.decrypt_ticket_payload("not-a-valid-jwe", secret="test-secret")

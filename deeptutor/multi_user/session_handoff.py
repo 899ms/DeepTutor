@@ -21,7 +21,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from jose import jwe
-from jose.exceptions import JWSError
+from jose.exceptions import JWEError, JWSError
 
 from .identity import AUTH_DIR, load_or_create_auth_secret
 
@@ -175,7 +175,7 @@ def decrypt_ticket_payload(token: str, *, secret: str | None = None) -> dict[str
     try:
         plaintext = jwe.decrypt(token, _jwe_key(secret))
         payload = json.loads(plaintext)
-    except (JWSError, ValueError, TypeError, json.JSONDecodeError):
+    except (JWEError, JWSError, ValueError, TypeError, json.JSONDecodeError):
         raise HandoffRejected("Invalid handoff ticket") from None
     if not isinstance(payload, dict):
         raise HandoffRejected("Invalid handoff ticket")
