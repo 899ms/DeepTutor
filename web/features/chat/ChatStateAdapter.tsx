@@ -686,12 +686,14 @@ function reducer(state: ProviderState, action: Action): ProviderState {
       const session = state.sessions[action.key];
       if (!session) return state;
       const messages = [...session.messages];
-      // Drop any placeholder STREAM_START assistant bubble before restoring.
-      while (
-        messages.length > 0 &&
-        messages[messages.length - 1].role === "assistant" &&
-        (messages[messages.length - 1].content ?? "") === "" &&
-        (messages[messages.length - 1].events?.length ?? 0) === 0
+      // Admission and transport failures can attach an error to the
+      // optimistic placeholder before rollback. It is still the retry's
+      // bubble, so discard it rather than leaving two assistant rows.
+      const placeholder = messages[messages.length - 1];
+      if (
+        placeholder?.role === "assistant" &&
+        typeof placeholder.id === "number" &&
+        placeholder.id < 0
       ) {
         messages.pop();
       }
@@ -1560,6 +1562,7 @@ export function ChatStateAdapterProvider({
   // assistant message if the server rejects the request (e.g. ``regenerate_busy``
   // or ``nothing_to_regenerate``). Keyed by session entry key.
   const pendingRegenerateRef = useRef<Map<string, MessageItem>>(new Map());
+  const pendingResendRef = useRef<Map<string, MessageItem>>(new Map());
   const traceCacheRef = useRef<TraceCache>(new TraceCache());
   const traceRequestsRef = useRef<Map<string, AbortController>>(new Map());
   // Forward-declared so ``handleRunnerEvent`` (created above
@@ -1754,6 +1757,7 @@ export function ChatStateAdapterProvider({
           turnId: event.turn_id || null,
         });
         pendingRegenerateRef.current.delete(effectiveKey);
+        pendingResendRef.current.delete(effectiveKey);
         const runner = runnersRef.current.get(effectiveKey);
         // Hold the WS open briefly so post-turn ``session_meta`` events
         // (e.g. the LLM-generated title for the first user/assistant
@@ -1835,9 +1839,12 @@ export function ChatStateAdapterProvider({
         // to keep the transcript in sync with the server.
         if (
           reason === "regenerate_busy" ||
-          reason === "nothing_to_regenerate"
+          reason === "nothing_to_regenerate" ||
+          reason === "start_turn_rejected"
         ) {
-          const stash = pendingRegenerateRef.current.get(effectiveKey);
+          const stash =
+            pendingRegenerateRef.current.get(effectiveKey) ??
+            pendingResendRef.current.get(effectiveKey);
           if (stash) {
             dispatch({
               type: "RESTORE_ASSISTANT",
@@ -1847,6 +1854,7 @@ export function ChatStateAdapterProvider({
           }
         }
         pendingRegenerateRef.current.delete(effectiveKey);
+        pendingResendRef.current.delete(effectiveKey);
         const status = String(
           (event.metadata as { status?: string } | undefined)?.status ||
             "failed",
@@ -2503,7 +2511,7 @@ export function ChatStateAdapterProvider({
         legacyPersistUserMessage === false
           ? false
           : undefined;
-      sendThroughRunner(
+      return sendThroughRunner(
         key,
         buildStartTurnInput({
         content,
@@ -2682,11 +2690,23 @@ export function ChatStateAdapterProvider({
       .reverse()
       .find((m) => m.role === "user" && m.requestSnapshot);
     if (!lastUser?.requestSnapshot) return;
+    // Persisted turns can use the server's regenerate path. It removes the
+    // failed answer, replays the saved request, and keeps one user row.
+    if (typeof lastUser.id === "number" && lastUser.id > 0) {
+      regenerateLastMessage();
+      return;
+    }
+    // The first attempt may have failed before the user row reached storage.
+    // Retry that request as a new turn, keeping the optimistic row visible.
+    const lastMessage = session.messages[session.messages.length - 1];
+    if (lastMessage?.role === "assistant") {
+      pendingResendRef.current.set(key, { ...lastMessage });
+    }
     // Remove the trailing failed assistant bubble so the new turn's
     // STREAM_START placeholder replaces it rather than stacking below.
     dispatch({ type: "POP_LAST_ASSISTANT", key });
     const snapshot = lastUser.requestSnapshot;
-    sendMessage(
+    void sendMessage(
       snapshot.content,
       undefined,
       undefined,
@@ -2695,9 +2715,19 @@ export function ChatStateAdapterProvider({
       {
         displayUserMessage: false,
         requestSnapshotOverride: snapshot,
+        parentMessageId:
+          typeof lastUser.parentMessageId === "number" &&
+          lastUser.parentMessageId <= 0
+            ? undefined
+            : lastUser.parentMessageId,
       },
-    );
-  }, [sendMessage]);
+    ).then((sent) => {
+      if (sent) return;
+      const stash = pendingResendRef.current.get(key);
+      pendingResendRef.current.delete(key);
+      if (stash) dispatch({ type: "RESTORE_ASSISTANT", key, message: stash });
+    });
+  }, [regenerateLastMessage, sendMessage]);
 
   const derivedState = useMemo<ChatState>(() => {
     const current = ensureSelectedSession(state);
