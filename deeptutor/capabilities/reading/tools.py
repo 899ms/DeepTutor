@@ -37,6 +37,7 @@ import asyncio
 import logging
 from typing import Any
 
+from deeptutor.capabilities.reading.media_notes import render_media_note as _media_note
 from deeptutor.core.tool_protocol import BaseTool, ToolDefinition, ToolParameter, ToolResult
 from deeptutor.tools.prompting import load_prompt_hints
 
@@ -420,6 +421,7 @@ class ReadMaterialTool(_ReadingToolBase):
                 for locator in rendered.locators
                 if locator in stamps
             )
+        media_note = await asyncio.to_thread(_media_note, store, material_id, manifest.unit, rendered.locators)
         followup = (
             "\n\n→ Now call reader_goto with the verbatim sentence you are "
             "about to cite, so the user sees it highlighted, and cite it in "
@@ -430,7 +432,7 @@ class ReadMaterialTool(_ReadingToolBase):
             )
         )
         return ToolResult(
-            content=rendered.text + timing + followup,
+            content=rendered.text + timing + media_note + followup,
             sources=[
                 {
                     "type": "reading",

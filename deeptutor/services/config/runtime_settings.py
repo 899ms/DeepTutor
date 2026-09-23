@@ -243,6 +243,9 @@ _MINERU_ENGINE_KEYS = frozenset(_DEFAULT_MINERU_ENGINE.keys())
 DEFAULT_DOCUMENT_PARSING_SETTINGS: dict[str, Any] = {
     "version": 2,
     "engine": _DEFAULT_DOCUMENT_PARSING_ENGINE,
+    # Caption embedded figures with a vision model at ingest, so a text-only
+    # model reading the material can still describe its images.
+    "image_caption": False,
     "engines": {
         DOCUMENT_PARSING_ENGINE_TEXT_ONLY: _DEFAULT_TEXT_ONLY_ENGINE,
         DOCUMENT_PARSING_ENGINE_MINERU: _DEFAULT_MINERU_ENGINE,
@@ -1107,7 +1110,12 @@ class RuntimeSettingsService:
         if engine not in _DOCUMENT_PARSING_ENGINES:
             engine = _DEFAULT_DOCUMENT_PARSING_ENGINE
 
-        return {"version": 2, "engine": engine, "engines": engines_out}
+        return {
+            "version": 2,
+            "engine": engine,
+            "image_caption": _coerce_bool(settings.get("image_caption"), False),
+            "engines": engines_out,
+        }
 
     def _normalize_mineru_engine(self, settings: dict[str, Any]) -> dict[str, Any]:
         mode = _string(settings.get("mode")).lower()

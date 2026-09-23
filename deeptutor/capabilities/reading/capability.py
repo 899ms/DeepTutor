@@ -37,6 +37,7 @@ from typing import Any
 import yaml
 
 from deeptutor.capabilities.protocol import PromptBlock
+from deeptutor.capabilities.reading.media_notes import CAPTION_CHAR_LIMIT
 from deeptutor.capabilities.reading.tools import (
     BINDING_KWARG,
     MATERIAL_KWARG,
@@ -61,6 +62,10 @@ MODE_KEY = "immersive_reading_mode"
 # part of a document, few enough that it cannot crowd out the conversation.
 LOCATE_HITS = 4
 LOCATE_SNIPPET_CHARS = 260
+# The viewport caption line: at most a few figures, each caption clipped, and a
+# hard ceiling on the whole line so one chatty figure cannot dominate the seed.
+VIEWPORT_CAPTION_ITEMS = 3
+VIEWPORT_CAPTION_CHARS = 600
 
 _PROMPT_CACHE: dict[str, dict[str, Any]] = {}
 
@@ -238,6 +243,71 @@ class ReadingCapability:
                 )
         return rendered
 
+    @staticmethod
+    def _embedded_image_count(material_id: str, locator: int) -> int:
+        """How many embedded images sit on the locator being viewed.
+
+        Best-effort and silent on failure: the seed must never turn a missing
+        media index into a broken turn.
+        """
+        try:
+            from deeptutor.reading import ReadingStore
+
+            return len(ReadingStore().media_items_at(material_id, locator))
+        except Exception:
+            return 0
+
+    @staticmethod
+    def _figure_caption_line(material_id: str, locator: int) -> str:
+        """A compact caption line for the figures on the locator being viewed.
+
+        A caption is written at ingestion by a vision model. This line is the
+        only channel a text-only model has to know what a page's figures show
+        when that page is not attached to the turn — the image parts ride the
+        current message, nothing else carries their content. Best-effort: any
+        failure (store unavailable, no captions) drops the line entirely rather
+        than breaking the turn, and the seed is byte-for-byte unchanged without
+        it.
+        """
+        try:
+            from deeptutor.reading import ReadingStore
+
+            rows = ReadingStore().media_items_at(material_id, locator)
+        except Exception:
+            return ""
+        parts: list[str] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("name") or "")
+            caption = str(row.get("caption") or "").strip()
+            if name and caption:
+                parts.append(f"{name} — {_clip(caption, CAPTION_CHAR_LIMIT)}")
+            if len(parts) >= VIEWPORT_CAPTION_ITEMS:
+                break
+        if not parts:
+            return ""
+        return _clip(
+            f"Locator {locator}'s figures: " + "; ".join(parts),
+            VIEWPORT_CAPTION_CHARS,
+        )
+
+    @staticmethod
+    def _page_render_attached(material_id: str, locator: int) -> bool:
+        """Whether the turn attached a full-page render of this locator.
+
+        The session injects a rendered image for drawn pages (vector diagrams
+        whose figures never reach ``get_images()``). Mirrors that gate through
+        the shared reading-layer probe. Best-effort and silent on failure: the
+        seed must never turn a missing render into a broken turn.
+        """
+        try:
+            from deeptutor.reading.page_render import page_has_render
+
+            return page_has_render(material_id, locator)
+        except Exception:
+            return False
+
     # -- tool kwargs ------------------------------------------------------
 
     def augment_kwargs(
@@ -272,19 +342,39 @@ class ReadingCapability:
     # -- seeds ------------------------------------------------------------
 
     def pre_loop_seed(self, context: UnifiedContext) -> str:
-        """Report the viewport — cheap, synchronous, no I/O.
+        """Report the viewport — synchronous, and cheap enough to run inline.
 
         Kept separate from the locate pre-pass so that "the user is looking at
-        page 12" reaches the model even when the search finds nothing.
+        page 12" reaches the model even when the search finds nothing. The
+        figure lines read the material's media index, and the render line only
+        counts one page's drawing objects (no rasterisation), so the cost is a
+        couple of file reads rather than any model call.
         """
         if not resolve_material_id(context):
             return ""
+        material_id = resolve_material_id(context)
         viewport = resolve_viewport(context)
         locator = _as_int(viewport.get("locator"))
         selection = str(viewport.get("selection") or "").strip()
         parts: list[str] = []
         if locator:
             parts.append(f"The reader is currently showing locator {locator}.")
+            embedded = self._embedded_image_count(material_id, locator)
+            if embedded:
+                parts.append(
+                    f"Locator {locator} contains {embedded} embedded image(s) from the document; "
+                    "they are attached to this message, so read them directly when the question "
+                    "concerns a figure."
+                )
+            if self._page_render_attached(material_id, locator):
+                parts.append(
+                    f"Locator {locator}'s content is drawn (diagrams/figures) rather than typed; "
+                    "a rendered image of that page is attached to this message, so read it "
+                    "directly when the question concerns a figure."
+                )
+            captions = self._figure_caption_line(material_id, locator)
+            if captions:
+                parts.append(captions)
         time_seconds = _as_float(viewport.get("time_seconds"))
         if time_seconds >= 0 and "time_seconds" in viewport:
             parts.append(f"Current media time: {_timestamp(time_seconds)} ({time_seconds:.1f}s).")
