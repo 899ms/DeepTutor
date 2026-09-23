@@ -23,6 +23,7 @@ import yaml
 
 from deeptutor.core.stream import StreamEventType
 from deeptutor.multi_user.models import CurrentUser
+from deeptutor.partners.channels.base import deliver_outbound
 from deeptutor.partners.config.paths import (
     get_data_dir,
     get_partner_dir,
@@ -687,13 +688,18 @@ class PartnerManager:
             event_bus = get_event_bus()
             while True:
                 msg: _OMsg = await bus.consume_outbound()
-                is_progress = bool(msg.metadata and msg.metadata.get("_progress"))
+                metadata = msg.metadata or {}
+                is_progress = bool(
+                    metadata.get("_progress")
+                    or metadata.get("_stream_delta")
+                    or metadata.get("_stream_end")
+                )
 
                 if instance.channel_manager:
                     channel = instance.channel_manager.get_channel(msg.channel)
                     if channel:
                         try:
-                            await channel.send(msg)
+                            await deliver_outbound(channel, msg)
                         except Exception:
                             logger.exception(
                                 "Failed to send to channel %s for partner %s",

@@ -627,6 +627,35 @@ class TestOutboundThreadRouting:
             assert out.metadata["message_id"] == 999
 
     @pytest.mark.asyncio
+    async def test_only_answer_stream_end_marks_confirmable_final_delivery(
+        self, partners_root, fake_orchestrator
+    ):
+        fake_orchestrator.script = narration_round("intro", "Checking") + finish("Answer")
+        runner = _runner(partners_root)
+        msg = InboundMessage(
+            channel="feishu",
+            sender_id="ou_user",
+            chat_id="oc_group",
+            content="Question",
+            metadata={"message_id": "om_user", "_wants_stream": True},
+        )
+        delivery_meta: dict[str, Any] = {}
+
+        assert await runner.process_message(msg, delivery_meta=delivery_meta) == "Answer"
+        ends = []
+        while not runner.bus.outbound.empty():
+            outbound = await runner.bus.outbound.get()
+            if outbound.metadata.get("_stream_end"):
+                ends.append(outbound)
+
+        assert len(ends) == 2
+        assert ends[0].metadata.get("_stream_final") is None
+        assert ends[1].metadata["_stream_final"] is True
+        assert ends[1].metadata["message_id"] == "om_user"
+        assert delivery_meta["_streamed"] is True
+        assert delivery_meta["_stream_id"] == ends[1].metadata["_stream_id"]
+
+    @pytest.mark.asyncio
     async def test_missing_thread_metadata_is_not_injected(self, partners_root, fake_orchestrator):
         fake_orchestrator.script = finish("reply text")
         runner = _runner(partners_root)
