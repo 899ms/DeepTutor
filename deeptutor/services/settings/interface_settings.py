@@ -23,6 +23,9 @@ DEFAULT_UI_SETTINGS: dict[str, Any] = {
     "theme": "snow",
     "language": "en",
     "response_language": "en",
+    # When true, TTS verbalizes LaTeX (fractions, powers, Greek). Dollar
+    # delimiters are stripped either way so the voice never says "dollar".
+    "voice_math_speak": True,
 }
 
 
