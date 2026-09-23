@@ -84,6 +84,7 @@ DEFAULT_AUTH_SETTINGS: dict[str, Any] = {
     "password_hash": "",
     "token_expire_hours": 24,
     "cookie_secure": False,
+    "private_login_hosts": [],
 }
 
 DEFAULT_INTEGRATIONS_SETTINGS: dict[str, Any] = {
@@ -432,6 +433,17 @@ def _string(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+def _host_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [item for raw in value if (item := _string(raw).lower().rstrip("."))]
+    raw = _string(value)
+    return [
+        item
+        for piece in raw.replace(";", ",").split(",")
+        if (item := piece.strip().lower().rstrip("."))
+    ]
+
+
 def _string_or_list(value: Any) -> str | list[str]:
     if isinstance(value, list):
         return [item for raw in value if (item := _string(raw))]
@@ -700,6 +712,7 @@ class RuntimeSettingsService:
             "AUTH_PASSWORD_HASH": auth["password_hash"],
             "AUTH_TOKEN_EXPIRE_HOURS": str(auth["token_expire_hours"]),
             "AUTH_COOKIE_SECURE": _bool_env(auth["cookie_secure"]),
+            "AUTH_PRIVATE_LOGIN_HOSTS": ",".join(auth["private_login_hosts"]),
             "NEXT_PUBLIC_AUTH_ENABLED": _bool_env(auth["enabled"]),
             # Consumed server-side by the Next.js middleware (web/proxy.ts) at
             # request time — NOT inlined into the browser bundle. The proxy
@@ -871,6 +884,8 @@ class RuntimeSettingsService:
             payload["token_expire_hours"] = value
         if value := self._process_env_value("AUTH_COOKIE_SECURE"):
             payload["cookie_secure"] = value
+        if value := self._process_env_value("AUTH_PRIVATE_LOGIN_HOSTS"):
+            payload["private_login_hosts"] = value
         return self._normalize_auth(payload)
 
     def _apply_integrations_process_overrides(self, settings: dict[str, Any]) -> dict[str, Any]:
@@ -1274,6 +1289,7 @@ class RuntimeSettingsService:
             "password_hash": _string(settings.get("password_hash")),
             "token_expire_hours": max(1, _coerce_int(settings.get("token_expire_hours"), 24)),
             "cookie_secure": _coerce_bool(settings.get("cookie_secure"), False),
+            "private_login_hosts": _host_list(settings.get("private_login_hosts")),
         }
 
     def _normalize_integrations(self, settings: dict[str, Any]) -> dict[str, Any]:

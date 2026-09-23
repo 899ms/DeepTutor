@@ -5075,5 +5075,11 @@
   "settings.presets.feature.image_generation": "image generation",
   "settings.presets.feature.video_generation": "video generation",
   "Preset loaded as a draft — review before applying": "Preset loaded as a draft — review before applying",
-  "Could not load the preset: {{message}}": "Could not load the preset: {{message}}"
+  "Could not load the preset: {{message}}": "Could not load the preset: {{message}}",
+  "Public device sign-in": "Public device sign-in",
+  "Public HTTPS origin": "Public HTTPS origin",
+  "Create link": "Create link",
+  "Pairing code": "Pairing code",
+  "Completing sign-in…": "Completing sign-in…",
+  "Expires in {{seconds}} seconds": "Expires in {{seconds}} seconds"
 }

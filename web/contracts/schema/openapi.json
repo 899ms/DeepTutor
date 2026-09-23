@@ -8231,6 +8231,54 @@
         "title": "SessionDetail",
         "type": "object"
       },
+      "SessionHandoffCompleteRequest": {
+        "description": "Public request that trades a JWE ticket for the normal cookie.",
+        "properties": {
+          "ticket": {
+            "maxLength": 8192,
+            "minLength": 32,
+            "title": "Ticket",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "title": "SessionHandoffCompleteRequest",
+        "type": "object"
+      },
+      "SessionHandoffCreateRequest": {
+        "description": "Private request that starts a one-time public handoff.",
+        "properties": {
+          "public_origin": {
+            "maxLength": 2048,
+            "minLength": 8,
+            "title": "Public Origin",
+            "type": "string"
+          }
+        },
+        "required": [
+          "public_origin"
+        ],
+        "title": "SessionHandoffCreateRequest",
+        "type": "object"
+      },
+      "SessionHandoffExchangeRequest": {
+        "description": "Public request that trades a pairing code for a JWE ticket.",
+        "properties": {
+          "code": {
+            "maxLength": 256,
+            "minLength": 16,
+            "title": "Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SessionHandoffExchangeRequest",
+        "type": "object"
+      },
       "SessionKeyBody": {
         "properties": {
           "session_key": {
@@ -13021,6 +13069,172 @@
           }
         },
         "summary": "Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session-handoff": {
+      "post": {
+        "description": "Create a host-bound, one-time pairing code from the private origin.",
+        "operationId": "create_session_handoff_api_auth_session_handoff_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "dt_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Dt Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Session Handoff Api Auth Session Handoff Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Session Handoff",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session-handoff/complete": {
+      "post": {
+        "description": "Consume a ticket once and issue the normal HttpOnly session cookie.",
+        "operationId": "complete_session_handoff_api_auth_session_handoff_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffCompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Complete Session Handoff Api Auth Session Handoff Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Complete Session Handoff",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/session-handoff/exchange": {
+      "post": {
+        "description": "Consume a pairing code and return a short-lived ticket in the response body.",
+        "operationId": "exchange_session_handoff_api_auth_session_handoff_exchange_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionHandoffExchangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Exchange Session Handoff Api Auth Session Handoff Exchange Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Exchange Session Handoff",
         "tags": [
           "auth"
         ]

@@ -85,6 +85,13 @@ _USER_IMPORT_MAX_ROWS = 500
 _USER_BATCH_MAX_ROWS = 500
 
 
+_FRONTEND_HOST_HEADER = "x-deeptutor-frontend-host"
+_AUTH_RUNTIME_SETTINGS = load_auth_settings()
+PRIVATE_LOGIN_HOSTS = frozenset(
+    str(host).lower().rstrip(".") for host in _AUTH_RUNTIME_SETTINGS.get("private_login_hosts", [])
+)
+
+
 def _cookie_attrs() -> dict:
     """Attribute set shared by ``login``'s ``set_cookie`` and ``logout``'s
     ``delete_cookie``.

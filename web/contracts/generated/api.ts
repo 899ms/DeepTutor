@@ -357,6 +357,66 @@ export interface paths {
     readonly patch?: never;
     readonly trace?: never;
   };
+  readonly "/api/auth/session-handoff": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Create Session Handoff
+     * @description Create a host-bound, one-time pairing code from the private origin.
+     */
+    readonly post: operations["create_session_handoff_api_auth_session_handoff_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/auth/session-handoff/complete": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Complete Session Handoff
+     * @description Consume a ticket once and issue the normal HttpOnly session cookie.
+     */
+    readonly post: operations["complete_session_handoff_api_auth_session_handoff_complete_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
+  readonly "/api/auth/session-handoff/exchange": {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly get?: never;
+    readonly put?: never;
+    /**
+     * Exchange Session Handoff
+     * @description Consume a pairing code and return a short-lived ticket in the response body.
+     */
+    readonly post: operations["exchange_session_handoff_api_auth_session_handoff_exchange_post"];
+    readonly delete?: never;
+    readonly options?: never;
+    readonly head?: never;
+    readonly patch?: never;
+    readonly trace?: never;
+  };
   readonly "/api/auth/status": {
     readonly parameters: {
       readonly query?: never;
@@ -13785,6 +13845,30 @@ export interface components {
        */
       readonly updated_at: number | null;
     };
+    /**
+     * SessionHandoffCompleteRequest
+     * @description Public request that trades a JWE ticket for the normal cookie.
+     */
+    readonly SessionHandoffCompleteRequest: {
+      /** Ticket */
+      readonly ticket: string;
+    };
+    /**
+     * SessionHandoffCreateRequest
+     * @description Private request that starts a one-time public handoff.
+     */
+    readonly SessionHandoffCreateRequest: {
+      /** Public Origin */
+      readonly public_origin: string;
+    };
+    /**
+     * SessionHandoffExchangeRequest
+     * @description Public request that trades a pairing code for a JWE ticket.
+     */
+    readonly SessionHandoffExchangeRequest: {
+      /** Code */
+      readonly code: string;
+    };
     /** SessionKeyBody */
     readonly SessionKeyBody: {
       /** Session Key */
@@ -15644,6 +15728,12 @@ export type SchemaServerPayload = components["schemas"]["ServerPayload"];
 export type SchemaSessionBranchBody =
   components["schemas"]["SessionBranchBody"];
 export type SchemaSessionDetail = components["schemas"]["SessionDetail"];
+export type SchemaSessionHandoffCompleteRequest =
+  components["schemas"]["SessionHandoffCompleteRequest"];
+export type SchemaSessionHandoffCreateRequest =
+  components["schemas"]["SessionHandoffCreateRequest"];
+export type SchemaSessionHandoffExchangeRequest =
+  components["schemas"]["SessionHandoffExchangeRequest"];
 export type SchemaSessionKeyBody = components["schemas"]["SessionKeyBody"];
 export type SchemaSessionOrganizationRequest =
   components["schemas"]["SessionOrganizationRequest"];
@@ -16430,6 +16520,115 @@ export interface operations {
     readonly responses: {
       /** @description Successful Response */
       readonly 201: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": {
+            readonly [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly create_session_handoff_api_auth_session_handoff_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: {
+        readonly Authorization?: string | null;
+      };
+      readonly path?: never;
+      readonly cookie?: {
+        readonly dt_token?: string | null;
+      };
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["SessionHandoffCreateRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": {
+            readonly [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly complete_session_handoff_api_auth_session_handoff_complete_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["SessionHandoffCompleteRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": {
+            readonly [key: string]: unknown;
+          };
+        };
+      };
+      /** @description Validation Error */
+      readonly 422: {
+        headers: {
+          readonly [name: string]: unknown;
+        };
+        content: {
+          readonly "application/json": components["schemas"]["HTTPValidationError"];
+        };
+      };
+    };
+  };
+  readonly exchange_session_handoff_api_auth_session_handoff_exchange_post: {
+    readonly parameters: {
+      readonly query?: never;
+      readonly header?: never;
+      readonly path?: never;
+      readonly cookie?: never;
+    };
+    readonly requestBody: {
+      readonly content: {
+        readonly "application/json": components["schemas"]["SessionHandoffExchangeRequest"];
+      };
+    };
+    readonly responses: {
+      /** @description Successful Response */
+      readonly 200: {
         headers: {
           readonly [name: string]: unknown;
         };

@@ -5075,5 +5075,11 @@
   "settings.presets.feature.image_generation": "图像生成",
   "settings.presets.feature.video_generation": "视频生成",
   "Preset loaded as a draft — review before applying": "预设已加载为草稿——请检查后再应用",
-  "Could not load the preset: {{message}}": "无法加载预设：{{message}}"
+  "Could not load the preset: {{message}}": "无法加载预设：{{message}}",
+  "Public device sign-in": "公共设备登录",
+  "Public HTTPS origin": "公共 HTTPS 地址",
+  "Create link": "创建链接",
+  "Pairing code": "配对码",
+  "Completing sign-in…": "正在完成登录…",
+  "Expires in {{seconds}} seconds": "{{seconds}} 秒后过期"
 }
