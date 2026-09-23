@@ -1186,6 +1186,85 @@ class TestLiveTurn:
             await mgr.stop_partner("ada")
 
     @pytest.mark.asyncio
+    async def test_second_browser_cannot_replace_an_active_web_turn(
+        self, partners_root, fake_orchestrator, monkeypatch
+    ):
+        from deeptutor.services.partners.manager import PartnerManager, PartnerTurnBusyError
+
+        mgr = PartnerManager()
+        mgr.save_config("ada", PartnerConfig(name="Ada"), auto_start=True)
+        await mgr.start_partner("ada")
+        release = asyncio.Event()
+        seen: list[str] = []
+
+        async def reply(_partner_id, content, **_kwargs):
+            seen.append(content)
+            await release.wait()
+            return f"answer to {content}"
+
+        monkeypatch.setattr(mgr, "send_message", reply)
+        try:
+            first = mgr.start_web_turn("ada", "web-shared", "first browser")
+            await asyncio.sleep(0)
+            with pytest.raises(PartnerTurnBusyError, match="already replying"):
+                mgr.start_web_turn("ada", "web-shared", "second browser")
+            assert mgr.subscribe_web_turn("ada", "web-shared") is first
+            assert mgr.web_session_is_busy("ada", "web-shared") is True
+            # A different worker's manager has no in-memory LiveTurn, but the
+            # file lease still rejects mutation of the same actor-scoped key.
+            other_manager = PartnerManager()
+            assert other_manager.subscribe_web_turn("ada", "web-shared") is None
+            assert other_manager.web_session_is_busy("ada", "web-shared") is True
+            assert seen == ["first browser"]
+
+            release.set()
+            await asyncio.wait_for(first.task, timeout=1)
+            assert first.done
+            assert mgr.web_session_is_busy("ada", "web-shared") is False
+            second = mgr.start_web_turn("ada", "web-shared", "second browser")
+            await asyncio.wait_for(second.task, timeout=1)
+            assert seen == ["first browser", "second browser"]
+        finally:
+            release.set()
+            await mgr.stop_partner("ada")
+
+    @pytest.mark.asyncio
+    async def test_stale_browser_send_does_not_append_to_old_shared_session(
+        self, partners_root, fake_orchestrator, monkeypatch
+    ):
+        from deeptutor.services.partners.manager import (
+            PartnerManager,
+            PartnerStaleSessionError,
+        )
+        from deeptutor.services.partners.web_continuity import set_web_continuity
+
+        mgr = PartnerManager()
+        mgr.save_config("ada", PartnerConfig(name="Ada"), auto_start=True)
+        await mgr.start_partner("ada")
+        set_web_continuity("ada", "account-a", enabled=True, session_key="web-current")
+        seen: list[str] = []
+
+        async def reply(_partner_id, content, **_kwargs):
+            seen.append(content)
+            return "reply"
+
+        monkeypatch.setattr(mgr, "send_message", reply)
+        try:
+            with pytest.raises(PartnerStaleSessionError) as stale:
+                mgr.start_web_turn(
+                    "ada", "web-old", "question from stale browser", account_id="account-a"
+                )
+            assert stale.value.active_session_key == "web-current"
+            assert seen == []
+            turn = mgr.start_web_turn(
+                "ada", "web-current", "question on current thread", account_id="account-a"
+            )
+            await asyncio.wait_for(turn.task, timeout=1)
+            assert seen == ["question on current thread"]
+        finally:
+            await mgr.stop_partner("ada")
+
+    @pytest.mark.asyncio
     async def test_manager_captures_authenticated_actor_for_private_history(
         self, partners_root, fake_orchestrator
     ):
