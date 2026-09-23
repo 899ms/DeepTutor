@@ -142,6 +142,27 @@ def test_resolve_maps_client_refs_and_source_aliases_to_final_ids():
     assert second.topic_source_ids == ["source_notes"]
 
 
+def test_duplicate_client_refs_reject_topic_creation_without_persisting(tmp_path):
+    store = LearningStore(root=tmp_path)
+    service = LearningService(store)
+    modules = [_module(_kp("draft_a"), _kp("draft_b"))]
+
+    with pytest.raises(ObjectiveRelationError, match="ambiguous"):
+        service.create_topic(
+            "topic",
+            name="Relations",
+            modules=modules,
+            metadata=TopicMetadata(path_id="topic", goal="Learn relations"),
+            sources=[],
+            relation_refs={
+                "draft_a": RelationRefs(client_ref="same"),
+                "draft_b": RelationRefs(client_ref="same"),
+            },
+        )
+
+    assert store.load("topic") is None
+
+
 def test_append_resolves_refs_after_final_ids_are_assigned(tmp_path):
     store = LearningStore(root=tmp_path)
     service = LearningService(store)

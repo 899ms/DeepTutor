@@ -27,6 +27,7 @@ from deeptutor.learning.models import (
     TopicSource,
 )
 from deeptutor.learning.objective_relations import (
+    ObjectiveRelationError,
     RelationRefs,
     resolve_relation_refs,
     validate_objective_relations,
@@ -281,14 +282,6 @@ class LearningService:
         self.replace_modules(progress, modules)
 
     @staticmethod
-    def _new_entity_id(prefix: str, reserved: set[str]) -> str:
-        while True:
-            candidate = f"{prefix}_{uuid.uuid4().hex[:12]}"
-            if candidate not in reserved:
-                reserved.add(candidate)
-                return candidate
-
-    @staticmethod
     def _resolve_final_relations(
         applied: list[LearningModule],
         submitted: list[LearningModule],
@@ -333,77 +326,6 @@ class LearningService:
             source_aliases=source_aliases,
             sources=sources,
         )
-
-    @classmethod
-    def _finalize_modules(
-        cls,
-        progress: LearningProgress,
-        modules: list[LearningModule],
-        *,
-        append: bool,
-        fresh_identity: bool,
-        relation_refs: dict[str, RelationRefs],
-        source_aliases: dict[str, str],
-        sources: list[TopicSource],
-    ) -> list[LearningModule]:
-        applied = [module.model_copy(deep=True) for module in modules]
-        existing_kp_ids = {
-            point.id for module in progress.modules for point in module.knowledge_points
-        }
-        prerequisite_aliases = {key: key for key in existing_kp_ids}
-        old_to_new: dict[str, str] = {}
-
-        if append:
-            offset = len(progress.modules)
-            for index, module in enumerate(applied, start=offset):
-                module.id = f"{progress.book_id}_m{index}"
-                module.order = index
-                for kp_index, point in enumerate(module.knowledge_points):
-                    old_id = point.id
-                    point.module_id = module.id
-                    point.id = f"{module.id}_kp{kp_index}"
-                    old_to_new[old_id] = point.id
-        elif fresh_identity and existing_kp_ids:
-            reserved_modules = set(module.id for module in progress.modules) | set(
-                module.id for module in applied
-            )
-            reserved_points = set(existing_kp_ids) | set(
-                point.id for module in applied for point in module.knowledge_points
-            )
-            for index, module in enumerate(applied):
-                module.id = cls._new_entity_id(f"{progress.book_id}_m", reserved_modules)
-                module.order = index
-                for point in module.knowledge_points:
-                    old_id = point.id
-                    point.module_id = module.id
-                    point.id = cls._new_entity_id(f"{module.id}_kp", reserved_points)
-                    old_to_new[old_id] = point.id
-        else:
-            for module in applied:
-                for point in module.knowledge_points:
-                    old_to_new[point.id] = point.id
-
-        final_refs: dict[str, RelationRefs] = {}
-        for module in applied:
-            for point in module.knowledge_points:
-                final_id = point.id
-                for old_id, new_id in old_to_new.items():
-                    if new_id == final_id:
-                        specs = relation_refs.get(old_id)
-                        if specs is not None:
-                            final_refs[final_id] = specs
-                            if specs.client_ref:
-                                prerequisite_aliases[specs.client_ref] = final_id
-                        break
-
-        resolve_relation_refs(
-            applied,
-            final_refs,
-            prerequisite_aliases=prerequisite_aliases,
-            source_aliases=source_aliases,
-            sources=sources,
-        )
-        return applied
 
     def replace_modules(self, progress: LearningProgress, modules: list[LearningModule]) -> None:
         """Replace all modules and clean stale KP state."""
@@ -1251,14 +1173,13 @@ class LearningService:
         def create(tx):
             tx.progress.name = str(name or "").strip()[:_MAX_PATH_NAME_LEN]
             tx.put_topic(metadata, sources)
-            applied_modules = self._finalize_modules(
-                tx.progress,
+            applied_modules = [module.model_copy(deep=True) for module in modules]
+            self._resolve_final_relations(
+                applied_modules,
                 modules,
-                append=False,
-                fresh_identity=False,
-                relation_refs=relation_refs or {},
-                source_aliases=source_aliases or {},
-                sources=sources,
+                relation_refs or {},
+                source_aliases or {},
+                sources,
             )
             validate_objective_relations(applied_modules, sources)
             self.replace_modules(tx.progress, applied_modules)

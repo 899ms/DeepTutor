@@ -232,7 +232,10 @@ class TestTopicProductApi:
 
         assert response.status_code == 200
         edited = response.json()["map"]["modules"][0]["knowledge_points"]
-        assert [point["id"] for point in edited] == [second["id"], first["id"]]
+        # A renamed objective gets fresh identity so previous mastery evidence
+        # cannot silently follow a changed learning target.
+        assert edited[0]["id"] != second["id"]
+        assert edited[1]["id"] == first["id"]
         assert edited[0]["name"] == "Second objective, renamed"
         assert edited[0]["prerequisite_ids"] == [first["id"]]
         assert edited[0]["topic_source_ids"] == [source_id]
